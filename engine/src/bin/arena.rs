@@ -52,15 +52,15 @@ pub fn parse_spec(s: &str) -> Spec {
     sp
 }
 
-struct Player {
+pub struct Player {
     brain: Brain,
     use_brain: bool,
     time: f64,
 }
 
 impl Player {
-    fn new(sp: &Spec, time: f64, seed: u64) -> Player {
-        let mut brain = Brain::new(seed, 18);
+    pub fn new(sp: &Spec, time: f64, seed: u64, tt_bits: u32) -> Player {
+        let mut brain = Brain::new(seed, tt_bits);
         brain.searcher.params = sp.params.clone();
         let margin = brain.searcher.cfg.root_margin;
         brain.searcher.cfg = sp.cfg.clone();
@@ -71,7 +71,7 @@ impl Player {
         brain.searcher.use_tb = sp.use_tb;
         Player { brain, use_brain: sp.brain, time: time * sp.tmul }
     }
-    fn choose(&mut self, g: &Game, rng: &mut Rng) -> Move {
+    pub fn choose(&mut self, g: &Game, rng: &mut Rng) -> Move {
         if !g.pos.assigned {
             return Move::flip(rng.below(32) as u8);
         }
@@ -91,8 +91,8 @@ impl Player {
 pub fn play_game(seed: u64, a_first: bool, time: f64, a: &Spec, b: &Spec, verbose: bool) -> (f64, usize) {
     let mut rng = Rng::new(seed);
     let mut g = Game::new(&mut rng);
-    let mut pa = Player::new(a, time, seed * 3 + 1);
-    let mut pb = Player::new(b, time, seed * 5 + 2);
+    let mut pa = Player::new(a, time, seed * 3 + 1, 18);
+    let mut pb = Player::new(b, time, seed * 5 + 2, 18);
     let mut a_color: Option<u8> = None;
     let mut turn_a = a_first;
     loop {

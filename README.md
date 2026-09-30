@@ -88,9 +88,12 @@ cargo test --release                                               # 規則與�
 cargo run --release --bin arena   -- 400 25 "A 設定" "B 設定" 16    # 自我對弈擂台
 cargo run --release --bin spsa    -- 10000 20 14                   # SPSA 調參
 cargo run --release --bin bench   -- 2000                          # 各階段搜尋深度
+MISTY_BIN=… cargo run --release --bin match -- misty 400 300 6     # 與外部引擎對弈（見下）
 cargo run --release --bin records -- 24 1000 ../games 4            # 產生棋譜
 python3 apply_params.py "$(cat ../tuning/round4.txt)"              # 把調參結果寫回預設值
 ```
+
+`match` 與外部引擎對弈，同一副牌交換先後手，終局一律依本專案規則判定：`misty`（[MistyBanqi](https://github.com/brianhliou/misty-banqi)，UCI，需把 `engine.rs` 的 40 步和棋改為 60；`misty:nodes=N` 改用固定節點數）或 `george`（[George0828Zhang hw3](https://github.com/George0828Zhang/chinese-dark-chess-hw)，TCG CDC 協定，需在 `estimatePlyTime` 讀取 `PLY_MS` 環境變數以固定每步時間）。執行檔路徑由 `MISTY_BIN`、`GEORGE_BIN` 指定，`REC=目錄` 可存下每盤棋譜。
 
 `arena` 的設定字串格式為 `key=value,...`，可覆寫任何評估參數（見 `src/eval.rs` 的 `PARAM_NAMES`，殘局專家參數加 `e.` 前綴）或搜尋設定，例如 `fmd`、`iflips`、`nmp`、`contempt`、`variety`、`tmul`。
 
