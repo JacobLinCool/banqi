@@ -1,0 +1,1 @@
+chase=13,danger=16,mobility=7,tempo=12,protect=10,trapped=28,late_chase=17,nocap_decay=49,last_pieces=62,cannon_line=10,hidden_near=8,obs_top=1078,obs_ratio=44,obs_cannon=219,obs_king=63,parity=14,flip_adv=42,flip_ele=20,flip_king=58,base_pawn=84

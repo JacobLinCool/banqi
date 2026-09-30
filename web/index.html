@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="zh-Hant-TW">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light dark" />
+    <title>台灣暗棋</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ccircle cx='32' cy='32' r='30' fill='%23f3e4c4' stroke='%23b8231b' stroke-width='4'/%3E%3Ctext x='32' y='44' font-size='34' text-anchor='middle' fill='%23b8231b' font-family='serif'%3E帥%3C/text%3E%3C/svg%3E" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Noto+Serif+TC:wght@700;900&text=%E5%B8%A5%E4%BB%95%E7%9B%B8%E4%BF%A5%E5%82%8C%E7%82%AE%E5%85%B5%E5%B0%87%E5%A3%AB%E8%B1%A1%E8%BB%8A%E9%A6%AC%E5%8C%85%E5%8D%92%E5%8F%B0%E7%81%A3%E6%9A%97%E6%A3%8B%E5%8B%9D%E8%B2%A0%E5%92%8C&display=swap"
+    />
+  </head>
+  <body>
+    <header class="top">
+      <div class="brand">
+        <span class="seal" aria-hidden="true">暗</span>
+        <div>
+          <h1>台灣暗棋</h1>
+          <p>與電腦對弈</p>
+        </div>
+      </div>
+    </header>
+
+    <main class="layout">
+      <section class="play" aria-label="棋盤">
+        <div class="player" id="bar-ai">
+          <div class="who">
+            <span class="avatar" aria-hidden="true">機</span>
+            <b>電腦</b>
+            <span class="tag" data-role="color">未定</span>
+            <span class="thinking" data-role="thinking" hidden><i></i><i></i><i></i> 思考中</span>
+          </div>
+          <div class="caps" data-role="caps" aria-label="電腦吃掉的子"></div>
+          <div class="think-progress" data-role="progress"><span></span></div>
+        </div>
+
+        <div class="board-wrap">
+          <div class="board" id="board" role="grid" aria-label="4×8 棋盤"></div>
+        </div>
+
+        <div class="player" id="bar-me">
+          <div class="who">
+            <span class="avatar me" aria-hidden="true">人</span>
+            <b>你</b>
+            <span class="tag" data-role="color">未定</span>
+          </div>
+          <div class="caps" data-role="caps" aria-label="你吃掉的子"></div>
+        </div>
+
+        <p class="status" id="status" aria-live="polite"></p>
+      </section>
+
+      <aside class="side">
+        <section class="card" aria-labelledby="h-setup">
+          <h2 id="h-setup">對局設定</h2>
+          <div class="field">
+            <span class="label">先手 <small>（下一局生效）</small></span>
+            <div class="seg" id="opt-first">
+              <label><input type="radio" name="first" value="human" /><span>玩家先</span></label>
+              <label><input type="radio" name="first" value="ai" /><span>電腦先</span></label>
+              <label><input type="radio" name="first" value="random" /><span>隨機</span></label>
+            </div>
+          </div>
+          <div class="field">
+            <span class="label">電腦思考時間</span>
+            <div class="seg" id="opt-time">
+              <label><input type="radio" name="time" value="500" /><span>快 0.5s</span></label>
+              <label><input type="radio" name="time" value="2000" /><span>標準 2s</span></label>
+              <label><input type="radio" name="time" value="5000" /><span>強 5s</span></label>
+              <label><input type="radio" name="time" value="10000" /><span>最強 10s</span></label>
+            </div>
+          </div>
+          <div class="field">
+            <label class="label" for="opt-variety">變化度 <output id="variety-out"></output></label>
+            <div class="range">
+              <span>穩健</span>
+              <input type="range" id="opt-variety" min="0" max="2" step="0.1" />
+              <span>多變</span>
+            </div>
+          </div>
+          <div class="actions">
+            <button class="btn primary" id="btn-new">新局</button>
+            <button class="btn" id="btn-undo">悔棋</button>
+          </div>
+        </section>
+
+        <section class="card" aria-labelledby="h-ai">
+          <h2 id="h-ai">電腦分析</h2>
+          <div id="analysis"><p class="muted">電腦走棋後，這裡會顯示評估與搜尋資訊。</p></div>
+        </section>
+
+        <section class="card" aria-labelledby="h-info">
+          <h2 id="h-info">棋局資訊</h2>
+          <div class="field">
+            <span class="label">無進展步數 <small>（未吃子、未翻子）</small></span>
+            <div class="meter"><span id="nocap-bar"></span></div>
+            <small class="muted" id="nocap-text"></small>
+          </div>
+          <div class="field">
+            <span class="label">尚未翻開</span>
+            <div class="pool" id="pool"></div>
+          </div>
+        </section>
+
+        <section class="card" aria-labelledby="h-log">
+          <h2 id="h-log">棋譜</h2>
+          <ol class="log" id="log"></ol>
+        </section>
+
+        <details class="card help">
+          <summary><h2>規則說明</h2></summary>
+          <ul>
+            <li>4×8 棋盤，32 枚棋子全部蓋著開局。輪到你時可以<b>翻開</b>任一蓋棋，或<b>移動</b>自己的棋子。</li>
+            <li>第一位翻子的玩家，執所翻出棋子的顏色。</li>
+            <li>棋子每步沿直線走一格到空位；吃子時只能吃相鄰、<b>同級或較低</b>的敵子：帥（將）＞仕（士）＞相（象）＞俥（車）＞傌（馬）＞炮（包）＞兵（卒）。</li>
+            <li>例外：帥（將）不能吃兵（卒），兵（卒）可以吃帥（將）。</li>
+            <li>炮（包）必須隔一子（蓋棋也算）跳吃，距離不限，不能直接吃相鄰的子。</li>
+            <li>吃光對方或使對方無子可動即獲勝；連續多步沒有吃子也沒有翻子則判和。</li>
+            <li>操作：點蓋棋翻開；點自己的棋子選取，再點標示的位置移動或吃子。可用「悔棋」退回你上一步。</li>
+          </ul>
+        </details>
+      </aside>
+    </main>
+
+    <dialog id="over">
+      <form method="dialog">
+        <div class="over-mark" id="over-mark">勝</div>
+        <h2 id="over-title"></h2>
+        <p id="over-text" class="muted"></p>
+        <div class="actions">
+          <button class="btn" value="close">檢視棋盤</button>
+          <button class="btn primary" value="new" id="over-new">再來一局</button>
+        </div>
+      </form>
+    </dialog>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
