@@ -84,6 +84,13 @@ input {
   color: inherit;
 }
 
+/* 連點棋盤時不要觸發雙擊縮放 */
+button,
+input,
+label {
+  touch-action: manipulation;
+}
+
 small {
   font-size: 0.8em;
 }
@@ -1115,6 +1122,95 @@ dialog p {
 
 .over-mark.r-draw {
   color: #5b6b3a;
+}
+
+/* ───────── 轉向提示（直拿手機時） ───────── */
+
+.rotate-hint {
+  display: none;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--gold);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--gold) 12%, var(--surface));
+  font-size: 0.85rem;
+}
+
+.rotate-hint svg {
+  flex: none;
+  width: 26px;
+  height: 26px;
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.rotate-hint span {
+  flex: 1;
+}
+
+.rotate-hint .link {
+  float: none;
+  white-space: nowrap;
+}
+
+@media (orientation: portrait) and (max-width: 600px) {
+  body:not(.hint-dismissed) .rotate-hint {
+    display: flex;
+  }
+}
+
+/* ───────── 手機橫放：棋盤依畫面高度縮放，資訊列移到右側 ───────── */
+
+@media (orientation: landscape) and (max-height: 520px) {
+  .top {
+    display: none;
+  }
+  .layout {
+    grid-template-columns: minmax(0, 1fr);
+    padding: 8px max(12px, env(safe-area-inset-right)) 32px max(12px, env(safe-area-inset-left));
+  }
+  .play {
+    position: static;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-rows: auto 1fr auto;
+    grid-template-areas:
+      "board ai"
+      "board status"
+      "board me";
+    gap: 8px 12px;
+    align-items: start;
+    /* 棋盤高度約為寬度的 0.534 倍；寬度同時保留右側資訊欄至少 200px */
+    --board-w: min(calc((100svh - 16px) / 0.534), calc(100vw - 2 * max(12px, env(safe-area-inset-left)) - 212px));
+  }
+  .board-wrap {
+    grid-area: board;
+    width: var(--board-w);
+    max-width: none;
+    margin: 0;
+  }
+  #bar-ai {
+    grid-area: ai;
+  }
+  #bar-me {
+    grid-area: me;
+  }
+  .status {
+    grid-area: status;
+    align-self: center;
+    font-size: 0.9rem;
+  }
+  .player {
+    padding: 6px 10px;
+    min-height: 0;
+  }
+  .rotate-hint {
+    display: none !important;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

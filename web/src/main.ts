@@ -594,6 +594,20 @@ variety.addEventListener("input", () => {
 });
 
 $("#btn-new").addEventListener("click", () => void newGame());
+const HINT_KEY = "cdc-rotate-hint-dismissed";
+try {
+  if (localStorage.getItem(HINT_KEY)) document.body.classList.add("hint-dismissed");
+} catch {
+  /* storage unavailable */
+}
+$("#rotate-dismiss").addEventListener("click", () => {
+  document.body.classList.add("hint-dismissed");
+  try {
+    localStorage.setItem(HINT_KEY, "1");
+  } catch {
+    /* ignore */
+  }
+});
 $("#btn-undo").addEventListener("click", () => void undo());
 $("#btn-pause").addEventListener("click", () => {
   paused = !paused;
@@ -615,3 +629,12 @@ document.addEventListener("keydown", (e) => {
 });
 
 void newGame();
+
+// PWA：離線快取（file:// 與不支援的瀏覽器略過）
+if ("serviceWorker" in navigator && location.protocol !== "file:") {
+  addEventListener("load", () => {
+    navigator.serviceWorker.register("./sw.js").catch(() => {
+      /* 註冊失敗只是少了離線支援 */
+    });
+  });
+}

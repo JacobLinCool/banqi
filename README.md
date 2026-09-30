@@ -9,7 +9,7 @@
 
 ## 快速開始
 
-線上版：<https://jacoblincool.github.io/banqi/>（推到 `main` 後由 GitHub Actions 自動建置並部署到 GitHub Pages）
+線上版：<https://jacoblincool.github.io/banqi/>（推到 `main` 後由 GitHub Actions 自動建置並部署到 GitHub Pages）。網站是 PWA，可以「加入主畫面」安裝成 App，開過一次之後即可離線遊玩；手機請橫放，棋盤會依畫面高度放大。
 
 
 需要 Rust（含 `wasm32-unknown-unknown` target）、[wasm-pack](https://rustwasm.github.io/wasm-pack/) 與 Node.js。

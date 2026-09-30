@@ -2,8 +2,17 @@
 <html lang="zh-Hant-TW">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="color-scheme" content="light dark" />
+    <meta name="description" content="與電腦對弈的台灣暗棋，引擎在瀏覽器內執行，可安裝、可離線遊玩。" />
+    <meta name="theme-color" content="#f4ede1" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#15120f" media="(prefers-color-scheme: dark)" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="暗棋" />
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="./icons/apple-touch-icon.png" />
     <title>台灣暗棋</title>
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ccircle cx='32' cy='32' r='30' fill='%23f3e4c4' stroke='%23b8231b' stroke-width='4'/%3E%3Ctext x='32' y='44' font-size='34' text-anchor='middle' fill='%23b8231b' font-family='serif'%3E帥%3C/text%3E%3C/svg%3E" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -26,6 +35,11 @@
 
     <main class="layout">
       <section class="play" aria-label="棋盤">
+        <div class="rotate-hint" id="rotate-hint" role="note">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="2.5" width="10" height="19" rx="2" /><path d="M3 13a9 9 0 0 0 7 8.5M21 11a9 9 0 0 0-7-8.5" /><path d="M8.5 18.5 10 21l-2.5 1.2M15.5 5.5 14 3l2.5-1.2" /></svg>
+          <span>把手機<b>轉成橫向</b>，棋盤會更大、更好操作</span>
+          <button type="button" class="link" id="rotate-dismiss" aria-label="不再提示">知道了</button>
+        </div>
         <div class="player" id="bar-ai">
           <div class="who">
             <span class="avatar" data-role="avatar" aria-hidden="true">機</span>
