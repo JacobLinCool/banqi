@@ -1,7 +1,8 @@
 // 音效：全部以 Web Audio 即時合成，不需要音檔，離線也能播放。
 //
-// - 棋子敲擊用模態合成（modal synthesis）：木塊自由振動的非諧波模態（1 : 2.76 : 5.40 : 8.93 …）各自衰減，
-//   加上接觸瞬間的噪音脈衝與棋盤的低頻共鳴。每一下的音高、力度、衰減都有細微隨機，避免機械感。
+// - 棋子敲擊用模態合成（modal synthesis），模擬硬木棋子落在厚實木盤上：棋子本身的非諧波模態
+//   （1 : 2.76 : 5.40 : 8.93）以低頻為主、高階模態弱而短；柔和的接觸脈衝；木盤的三個低頻共鳴模態；
+//   最後低通讓音色溫潤。每一下的音高、力度、衰減都有細微隨機，避免機械感。
 // - 依棋子所在欄位左右聲像定位；程序產生的房間殘響讓聲音有空間感。
 // - 終局樂句用 Karplus–Strong 撥弦合成，五聲音階，接近古箏的音色。
 
@@ -71,8 +72,14 @@ export class Sound {
       this.reverb.buffer = roomImpulse(ctx);
       const wet = ctx.createGain();
       wet.gain.value = 0.9;
-      this.bus.connect(comp);
-      this.reverb.connect(wet).connect(comp);
+      // 整體再壓一點高頻，讓音色沉穩
+      const shelf = ctx.createBiquadFilter();
+      shelf.type = "highshelf";
+      shelf.frequency.value = 3000;
+      shelf.gain.value = -6;
+      this.bus.connect(shelf);
+      this.reverb.connect(wet).connect(shelf);
+      shelf.connect(comp);
       comp.connect(this.master).connect(ctx.destination);
     }
     if (this.ctx.state === "suspended") void this.ctx.resume();
@@ -102,74 +109,74 @@ export class Sound {
     this.play(ctx, filteredNoise(ctx, o), v);
   }
 
-  /** 拿起棋子（選取） */
+  /** 拿起棋子（選取）：指尖輕扣 */
   select(pan = 0) {
     const ctx = this.live();
     if (!ctx) return;
-    this.hit(ctx, { f0: rand(1750, 1900), decay: 0.028, thump: 0, click: 0.5 }, { pan, gain: 0.22, send: 0.05 });
+    this.hit(ctx, { f0: rand(820, 900), decay: 0.022, body: 0.15, hardness: 0.35 }, { pan, gain: 0.26, send: 0.05 });
   }
 
-  /** 走子：棋子在木盤上滑動，落定時一聲輕響（配合 240ms 的移動動畫） */
+  /** 走子：棋子在木盤上低沉地滑過，落定時一聲「篤」（配合 240ms 的移動動畫） */
   move(pan = 0) {
     const ctx = this.live();
     if (!ctx) return;
-    this.noise(ctx, { dur: 0.19, lo: 700, hi: 2600, attack: 0.35 }, { pan, gain: 0.1, send: 0.04 });
-    this.hit(ctx, { f0: rand(1080, 1220), decay: rand(0.032, 0.042), thump: 0.55, click: 0.8 }, { pan, gain: 0.62, at: 0.2 });
+    this.noise(ctx, { dur: 0.2, lo: 180, hi: 1300, attack: 0.35 }, { pan, gain: 0.09, send: 0.03 });
+    this.hit(ctx, { f0: rand(560, 640), decay: rand(0.045, 0.055), body: 0.8, hardness: 0.5 }, { pan, gain: 0.72, at: 0.2 });
   }
 
-  /** 翻子：指尖一撥、棋子翻面落下 */
+  /** 翻子：指尖掀起棋子，翻面後穩穩落下 */
   flip(pan = 0) {
     const ctx = this.live();
     if (!ctx) return;
-    this.hit(ctx, { f0: rand(2100, 2400), decay: 0.02, thump: 0, click: 0.6 }, { pan, gain: 0.16, send: 0.03 });
-    this.noise(ctx, { dur: 0.07, lo: 3000, hi: 7500, attack: 0.5 }, { pan, gain: 0.09, send: 0.05, at: 0.02 });
-    this.hit(ctx, { f0: rand(1280, 1420), decay: rand(0.03, 0.04), thump: 0.4, click: 1 }, { pan, gain: 0.58, at: 0.13 });
+    this.hit(ctx, { f0: rand(900, 980), decay: 0.016, body: 0.1, hardness: 0.3 }, { pan, gain: 0.14, send: 0.03 });
+    this.noise(ctx, { dur: 0.08, lo: 400, hi: 1800, attack: 0.5 }, { pan, gain: 0.06, send: 0.04, at: 0.02 });
+    this.hit(ctx, { f0: rand(640, 720), decay: rand(0.042, 0.05), body: 0.7, hardness: 0.55 }, { pan, gain: 0.68, at: 0.13 });
     // 落定後的一下輕彈
-    this.hit(ctx, { f0: rand(1300, 1450), decay: 0.02, thump: 0.1, click: 0.6 }, { pan, gain: 0.14, at: 0.19 });
+    this.hit(ctx, { f0: rand(650, 730), decay: 0.02, body: 0.2, hardness: 0.3 }, { pan, gain: 0.12, at: 0.185 });
   }
 
   /** 吃子：重重拍下、撞開對方棋子，被吃的子被收到一旁 */
   capture(pan = 0) {
     const ctx = this.live();
     if (!ctx) return;
-    this.noise(ctx, { dur: 0.16, lo: 600, hi: 2200, attack: 0.4 }, { pan, gain: 0.09, send: 0.04 });
-    this.hit(ctx, { f0: rand(900, 990), decay: rand(0.05, 0.065), thump: 1, click: 1 }, { pan, gain: 1, at: 0.19, send: 0.16 });
-    this.hit(ctx, { f0: rand(1550, 1700), decay: 0.028, thump: 0.1, click: 0.9 }, { pan: pan * 1.2, gain: 0.42, at: 0.225 });
+    this.noise(ctx, { dur: 0.17, lo: 160, hi: 1200, attack: 0.4 }, { pan, gain: 0.08, send: 0.03 });
+    this.hit(ctx, { f0: rand(470, 520), decay: rand(0.07, 0.085), body: 1.2, hardness: 0.75 }, { pan, gain: 1, at: 0.19, send: 0.16 });
+    this.hit(ctx, { f0: rand(700, 780), decay: 0.03, body: 0.3, hardness: 0.6 }, { pan: pan * 1.2, gain: 0.34, at: 0.222 });
     // 被吃的棋子在一旁輕碰幾下
     const side = pan >= 0 ? 0.85 : -0.85;
     for (const [t, g] of [
-      [0.36, 0.16],
-      [0.45, 0.1],
-      [0.52, 0.06],
+      [0.36, 0.14],
+      [0.45, 0.09],
+      [0.52, 0.05],
     ] as const)
-      this.hit(ctx, { f0: rand(1500, 1900), decay: 0.03, thump: 0, click: 0.7 }, { pan: side, gain: g, at: t + rand(-0.01, 0.01) });
+      this.hit(ctx, { f0: rand(680, 820), decay: 0.02, body: 0.1, hardness: 0.35 }, { pan: side, gain: g, at: t + rand(-0.01, 0.01) });
   }
 
-  /** 不能這樣走 */
+  /** 不能這樣走：兩下悶響 */
   deny(pan = 0) {
     const ctx = this.live();
     if (!ctx) return;
-    this.hit(ctx, { f0: 420, decay: 0.03, thump: 0.6, click: 0.2 }, { pan, gain: 0.3, send: 0.02 });
-    this.hit(ctx, { f0: 380, decay: 0.03, thump: 0.6, click: 0.2 }, { pan, gain: 0.26, send: 0.02, at: 0.09 });
+    this.hit(ctx, { f0: 300, decay: 0.028, body: 0.6, hardness: 0.15 }, { pan, gain: 0.34, send: 0.02 });
+    this.hit(ctx, { f0: 270, decay: 0.028, body: 0.6, hardness: 0.15 }, { pan, gain: 0.3, send: 0.02, at: 0.09 });
   }
 
   /** 開局洗牌：一把棋子在盤上翻攪、碰撞 */
   shuffle() {
     const ctx = this.live();
     if (!ctx) return;
-    this.noise(ctx, { dur: 1.0, lo: 500, hi: 3000, attack: 0.2 }, { gain: 0.07, send: 0.1 });
+    this.noise(ctx, { dur: 1.0, lo: 250, hi: 1600, attack: 0.2 }, { gain: 0.07, send: 0.1 });
     for (let i = 0; i < 30; i++) {
       const t = Math.pow(Math.random(), 0.8) * 0.95;
-      this.hit(ctx, { f0: rand(900, 1800), decay: rand(0.018, 0.04), thump: rand(0, 0.3), click: rand(0.4, 1) }, {
+      this.hit(ctx, { f0: rand(520, 950), decay: rand(0.018, 0.035), body: rand(0.1, 0.5), hardness: rand(0.3, 0.6) }, {
         pan: rand(-0.8, 0.8),
-        gain: rand(0.08, 0.3) * (1 - t * 0.5),
+        gain: rand(0.1, 0.32) * (1 - t * 0.5),
         at: t,
         send: 0.12,
       });
     }
     // 最後把牌陣排整齊
     for (let i = 0; i < 4; i++)
-      this.hit(ctx, { f0: rand(1050, 1200), decay: 0.034, thump: 0.5, click: 0.8 }, { pan: rand(-0.3, 0.3), gain: 0.3, at: 1.05 + i * 0.07 });
+      this.hit(ctx, { f0: rand(560, 640), decay: 0.04, body: 0.7, hardness: 0.45 }, { pan: rand(-0.3, 0.3), gain: 0.34, at: 1.05 + i * 0.07 });
   }
 
   /** 終局樂句（古箏風撥弦，五聲音階） */
@@ -187,7 +194,7 @@ export class Sound {
           : // 和局：宮、徵兩音平穩收束
             [["A4", 0, 0.5], ["D4", 0.28, 0.55], ["A3", 0.28, 0.35]];
     phrase.forEach(([note, t, g], i) => {
-      const buf = this.string(ctx, note, NOTE[note], result === "lose" ? 0.35 : 0.55);
+      const buf = this.string(ctx, note, NOTE[note], result === "lose" ? 0.28 : 0.4);
       this.play(ctx, buf, { pan: ((i % 5) - 2) * 0.18, gain: g, send: 0.45, at: delay + t });
     });
   }
@@ -203,58 +210,65 @@ export class Sound {
 // ───────────────────────── 合成 ─────────────────────────
 
 interface HitOpts {
-  /** 基頻（Hz） */
+  /** 棋子本身的基頻（Hz） */
   f0: number;
   /** 基頻的衰減時間常數（秒） */
   decay: number;
-  /** 棋盤低頻共鳴的量 */
-  thump: number;
-  /** 接觸瞬間噪音脈衝的量 */
-  click: number;
+  /** 木盤共鳴的量 */
+  body: number;
+  /** 撞擊硬度（0–1）：越硬接觸越短、高頻越多 */
+  hardness: number;
 }
 
-/** 木塊撞擊：自由–自由樑的非諧波模態，高階模態衰減較快 */
+/** 硬木棋子落在厚木盤上 */
 export function woodHit(ctx: AudioContext, o: HitOpts): AudioBuffer {
   const sr = ctx.sampleRate;
-  const len = Math.ceil(sr * Math.min(0.6, o.decay * 7 + 0.05));
+  const len = Math.ceil(sr * (Math.max(o.decay * 6, 0.16) + 0.05));
   const buf = ctx.createBuffer(1, len, sr);
   const out = buf.getChannelData(0);
+  // 棋子：自由–自由樑的非諧波模態，高階模態弱而短（硬木的內部阻尼讓高頻很快消失）
   const modes: [number, number, number][] = [
     [1, 1, 1],
-    [2.756 * rand(0.985, 1.015), 0.5, 0.55],
-    [5.404 * rand(0.98, 1.02), 0.28, 0.32],
-    [8.933 * rand(0.98, 1.02), 0.14, 0.2],
-    [13.34 * rand(0.97, 1.03), 0.07, 0.13],
+    [2.756 * rand(0.985, 1.015), 0.3, 0.42],
+    [5.404 * rand(0.98, 1.02), 0.09, 0.24],
+    [8.933 * rand(0.98, 1.02), 0.03, 0.15],
   ];
-  const nyq = sr / 2;
   for (const [ratio, amp, dk] of modes) {
     const f = o.f0 * ratio;
-    if (f > nyq * 0.9) continue;
     const w = (2 * Math.PI * f) / sr;
     const tau = o.decay * dk * sr;
+    const a = ratio === 1 ? amp : amp * (0.4 + o.hardness);
     const ph = Math.random() * Math.PI * 2;
-    for (let n = 0; n < len; n++) out[n] += amp * Math.exp(-n / tau) * Math.sin(w * n + ph);
+    for (let n = 0; n < len; n++) out[n] += a * Math.exp(-n / tau) * Math.sin(w * n + ph);
   }
-  // 棋盤共鳴：低頻、快速衰減
-  if (o.thump > 0) {
-    const f = rand(140, 190);
-    const w = (2 * Math.PI * f) / sr;
-    const tau = 0.035 * sr;
-    for (let n = 0; n < len; n++) out[n] += o.thump * 0.7 * Math.exp(-n / tau) * Math.sin(w * n);
-  }
-  // 接觸瞬間：幾毫秒的高通噪音
-  if (o.click > 0) {
-    const cl = Math.min(len, Math.ceil(sr * 0.004));
-    let prev = 0;
-    for (let n = 0; n < cl; n++) {
-      const x = Math.random() * 2 - 1;
-      out[n] += o.click * 0.6 * (x - prev) * Math.exp(-n / (cl / 4));
-      prev = x;
+  // 木盤：三個低頻共鳴模態，受敲擊後才慢慢振起來，給聲音厚度
+  if (o.body > 0) {
+    const rise = 0.0025 * sr;
+    for (const [f, amp, dec] of [
+      [rand(92, 104), 0.9, 0.07],
+      [rand(175, 195), 0.7, 0.055],
+      [rand(300, 335), 0.6, 0.042],
+    ]) {
+      const w = (2 * Math.PI * f) / sr;
+      const tau = dec * sr;
+      for (let n = 0; n < len; n++) out[n] += o.body * 0.5 * amp * (1 - Math.exp(-n / rise)) * Math.exp(-n / tau) * Math.sin(w * n);
     }
   }
-  // 起音不要瞬間跳起（避免爆音），並正規化
-  const atk = Math.ceil(sr * 0.0006);
-  for (let n = 0; n < atk; n++) out[n] *= n / atk;
+  // 接觸：半餘弦脈衝，硬度越低越寬越柔（1.2–3 ms）
+  const width = Math.ceil(sr * (0.003 - 0.0018 * o.hardness));
+  for (let n = 0; n < Math.min(width, len); n++) out[n] -= 0.9 * Math.sin((Math.PI * n) / width);
+  // 溫潤：兩次一階低通
+  const cut = 1800 + 2600 * o.hardness;
+  const k = 1 - Math.exp((-2 * Math.PI * cut) / sr);
+  let y1 = 0, y2 = 0;
+  for (let n = 0; n < len; n++) {
+    y1 += k * (out[n] - y1);
+    y2 += k * (y1 - y2);
+    out[n] = y2;
+  }
+  // 尾端淡出並正規化
+  const fade = Math.ceil(sr * 0.03);
+  for (let n = len - fade; n < len; n++) out[n] *= (len - n) / fade;
   normalize(out, 0.9);
   return buf;
 }
@@ -355,9 +369,9 @@ export function roomImpulse(ctx: AudioContext): AudioBuffer {
     let lp = 0;
     for (let n = 0; n < len; n++) {
       const t = n / sr;
-      const env = Math.exp(-t / 0.42);
-      // 越晚越暗：低通係數隨時間變小
-      const k = 0.55 * Math.exp(-t / 0.5) + 0.06;
+      const env = Math.exp(-t / 0.38);
+      // 越晚越暗：低通係數隨時間變小（整體偏暗，像木造的房間）
+      const k = 0.26 * Math.exp(-t / 0.3) + 0.03;
       lp += k * (Math.random() * 2 - 1 - lp);
       d[n] = lp * env * (t < 0.008 ? t / 0.008 : 1);
     }
