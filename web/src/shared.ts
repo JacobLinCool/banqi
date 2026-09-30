@@ -42,6 +42,8 @@ export interface Analysis {
 
 export type Request =
   | { type: "new"; seed: number }
+  /** 以種子開局並依序走完 moves（編碼 from | to << 5）；用於回放與從回放接手 */
+  | { type: "load"; seed: number; moves: number[] }
   | { type: "play"; from: number; to: number }
   | { type: "think"; slot: number; timeMs: number; variety: number }
   | { type: "undo"; n: number };

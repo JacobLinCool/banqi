@@ -1,5 +1,7 @@
 import "./style.css";
+import { Sound } from "./audio";
 import { Engine } from "./engine";
+import { decodeRecord, type GameRecord, recordUrl } from "./replay";
 import {
   type Analysis,
   COLOR_NAMES,
@@ -28,9 +30,21 @@ interface Settings {
   timeB: number;
   variety: number;
   auto: boolean;
+  sound: boolean;
+  volume: number;
 }
 const SETTINGS_KEY = "cdc-settings";
-const settings: Settings = { mode: "human", first: "human", time: 2000, timeA: 2000, timeB: 2000, variety: 0.5, auto: false };
+const settings: Settings = {
+  mode: "human",
+  first: "human",
+  time: 2000,
+  timeA: 2000,
+  timeB: 2000,
+  variety: 0.5,
+  auto: false,
+  sound: true,
+  volume: 0.8,
+};
 try {
   Object.assign(settings, JSON.parse(localStorage.getItem(SETTINGS_KEY) ?? "{}"));
 } catch {
@@ -61,6 +75,24 @@ let selected: number | null = null;
 let analysis: { data: Analysis; before: number[]; seat: Seat } | null = null;
 let error = "";
 const score = { a: 0, b: 0, draw: 0 }; // 電腦對戰戰績（以座位計）
+let seed = 0; // 本局的發牌種子（分享用）
+
+/** 回放中的棋局：full 是整局的著法紀錄，ply 是目前停在第幾步 */
+interface Replay {
+  record: GameRecord;
+  full: HistoryEntry[];
+  final: Snapshot;
+  ply: number;
+  playing: boolean;
+  timer: number;
+}
+let replay: Replay | null = null;
+const SPEEDS = [0.5, 1, 2, 4];
+let speed = 1;
+
+const sound = new Sound();
+sound.enabled = settings.sound;
+sound.volume = settings.volume;
 
 const $ = <T extends HTMLElement = HTMLElement>(sel: string, root: ParentNode = document) =>
   root.querySelector(sel) as T;
@@ -75,8 +107,8 @@ const overDialog = $<HTMLDialogElement>("#over");
 const seatOfPly = (ply: number) => ((ply + firstSeat) % 2) as Seat;
 const isHumanPly = (ply: number) => mode === "human" && seatOfPly(ply) === 0;
 
-/** 座位名稱 */
-const seatName = (seat: Seat) => (mode === "ai" ? (seat ? "電腦 B" : "電腦 A") : seat ? "電腦" : "你");
+/** 座位名稱（回放時人機對弈的玩家不稱「你」） */
+const seatName = (seat: Seat) => (mode === "ai" ? (seat ? "電腦 B" : "電腦 A") : seat ? "電腦" : replay ? "玩家" : "你");
 
 function seatColor(s: Snapshot, seat: Seat): number | null {
   if (!s.assigned || s.history.length === 0) return null;
@@ -90,6 +122,9 @@ const humanColor = (s: Snapshot) => (mode === "human" ? seatColor(s, 0) : null);
 const seatTime = (seat: Seat) => (mode === "ai" ? (seat ? settings.timeB : settings.timeA) : settings.time);
 
 const decode = (m: number) => ({ from: m & 31, to: (m >> 5) & 31 });
+
+/** 依欄位（a–h）決定左右聲像 */
+const panOf = (sq: number) => (((sq % 8) - 3.5) / 3.5) * 0.7;
 
 // ───────────────────────── rendering helpers ─────────────────────────
 
@@ -131,7 +166,7 @@ function render(animate = false) {
   const s = state;
   if (!s) return;
   const hc = humanColor(s);
-  const myTurn = s.outcome === -1 && isHumanPly(s.ply) && !thinking;
+  const myTurn = !replay && s.outcome === -1 && isHumanPly(s.ply) && !thinking;
   const moves = s.legal.map(decode);
   const targets = new Map<number, boolean>(); // to → isCapture
   if (selected !== null && myTurn)
@@ -177,6 +212,7 @@ function render(animate = false) {
   renderLog(s);
   renderAnalysis(s);
   renderControls(s);
+  renderReplay(s);
 }
 
 function renderControls(s: Snapshot) {
@@ -195,7 +231,7 @@ function renderControls(s: Snapshot) {
 }
 
 function setBar(bar: HTMLElement, seat: Seat, color: number | null, s: Snapshot, toMove: boolean) {
-  const human = mode === "human" && seat === 0;
+  const human = mode === "human" && seat === 0 && !replay;
   const avatar = $("[data-role=avatar]", bar);
   avatar.textContent = mode === "ai" ? (seat ? "B" : "A") : seat ? "機" : "人";
   avatar.classList.toggle("me", seat === 0);
@@ -213,6 +249,12 @@ function setBar(bar: HTMLElement, seat: Seat, color: number | null, s: Snapshot,
 }
 
 function statusText(s: Snapshot, hc: number | null): string {
+  if (replay) {
+    if (s.outcome !== -1) return s.outcome === 2 ? "和局" : `${winnerLabel(s)}獲勝`;
+    const last = s.history.at(-1);
+    if (!last) return "開局：按播放或 → 開始回放";
+    return `第 ${s.ply} 步　${seatName(seatOfPly(s.ply - 1))}　${notate(last)}`;
+  }
   if (mode === "ai") {
     if (s.outcome !== -1) return s.outcome === 2 ? "和局" : `${winnerLabel(s)}獲勝`;
     const seat = seatOfPly(s.ply);
@@ -248,22 +290,42 @@ function renderInfo(s: Snapshot) {
 function renderLog(s: Snapshot) {
   const log = $("#log");
   log.replaceChildren();
-  if (!s.history.length) log.innerHTML = `<li class="muted empty">尚未開始</li>`;
-  const first = s.history.length ? colorOf(s.history[0].info) : 0;
-  s.history.forEach((h: HistoryEntry, i) => {
+  // 回放時列出整局，目前這步高亮、之後的淡化
+  const moves = replay ? replay.full : s.history;
+  if (!moves.length) log.innerHTML = `<li class="muted empty">尚未開始</li>`;
+  const first = moves.length ? colorOf(moves[0].info) : 0;
+  let current: HTMLElement | null = null;
+  moves.forEach((h: HistoryEntry, i) => {
     const mover = i % 2 === 0 ? first : 1 - first; // colours alternate from the first flip
     const li = document.createElement("li");
     li.innerHTML = `<span class="n">${i + 1}</span><span class="dot ${mover ? "black" : "red"}"></span><span class="who">${
-      mode === "ai" ? (seatOfPly(i) ? "B" : "A") : isHumanPly(i) ? "你" : "電腦"
+      mode === "ai" ? (seatOfPly(i) ? "B" : "A") : isHumanPly(i) ? (replay ? "玩家" : "你") : "電腦"
     }</span><span class="mv"></span>`;
     $(".mv", li).textContent = notate(h);
+    if (replay) {
+      if (i === s.ply - 1) current = li;
+      li.classList.toggle("current", i === s.ply - 1);
+      li.classList.toggle("future", i >= s.ply);
+      li.addEventListener("click", () => {
+        setPlaying(false);
+        void seek(i + 1);
+      });
+    }
     log.append(li);
   });
-  log.scrollTop = log.scrollHeight;
+  if (!replay) log.scrollTop = log.scrollHeight;
+  else if (current) {
+    const top = (current as HTMLElement).getBoundingClientRect().top - log.getBoundingClientRect().top + log.scrollTop;
+    log.scrollTop = top - log.clientHeight / 2;
+  } else log.scrollTop = 0;
 }
 
 function renderAnalysis(s: Snapshot) {
   const root = $("#analysis");
+  if (replay) {
+    root.innerHTML = `<p class="muted">回放中不顯示電腦分析；可以從任一步「接手對弈」，讓電腦繼續思考。</p>`;
+    return;
+  }
   if (!analysis) {
     root.innerHTML = `<p class="muted">${thinking ? "電腦思考中…" : "電腦走棋後，這裡會顯示評估與搜尋資訊。"}</p>`;
     return;
@@ -377,45 +439,213 @@ function animateMove(h: HistoryEntry) {
 // ───────────────────────── game flow ─────────────────────────
 
 function apply(next: Snapshot, animate: boolean) {
-  const ended = state?.outcome === -1 && next.outcome !== -1;
+  const prev = state;
+  const ended = prev?.outcome === -1 && next.outcome !== -1;
   state = next;
-  if (ended && mode === "ai") {
+  if (ended && mode === "ai" && !replay) {
     if (next.outcome === 2) score.draw++;
     else if (next.outcome === seatColor(next, 0)) score.a++;
     else score.b++;
   }
   render(animate);
+  if (animate && prev && next.ply === prev.ply + 1) moveSound(next);
   if (next.outcome === -1) return;
+  if (ended) endSound(next);
+  if (replay) return;
   if (mode === "ai" && settings.auto && ended) {
     const gen = game;
     setTimeout(() => gen === game && settings.auto && !paused && void newGame(), 2500);
   } else setTimeout(() => showOver(next), 550);
 }
 
-async function newGame() {
+function moveSound(s: Snapshot) {
+  const last = s.history.at(-1);
+  if (!last) return;
+  const pan = panOf(last.to);
+  if (last.flip) sound.flip(pan);
+  else if (last.info < FACE_DOWN) sound.capture(pan);
+  else sound.move(pan);
+}
+
+function endSound(s: Snapshot) {
+  if (s.outcome === 2) sound.end("draw");
+  else if (mode === "human" && !replay) sound.end(s.outcome === humanColor(s) ? "win" : "lose");
+  else sound.end("win");
+}
+
+/** 結束目前的對局或回放、重設引擎；回傳新的世代編號 */
+function reset(): number {
   engine.terminate(); // aborts any running search
   engine = new Engine();
-  const gen = ++game;
+  stopReplay();
   thinking = busy = paused = false;
   selected = null;
   analysis = null;
   error = "";
+  stopProgress();
   if (overDialog.open) overDialog.close();
-  mode = settings.mode;
+  return ++game;
+}
+
+/** 開新局；from 用於從回放的某一步接手（人機對弈，玩家執輪到走的一方） */
+async function newGame(from?: { seed: number; moves: number[] }) {
+  const gen = reset();
+  if (location.search) history.replaceState(null, "", location.pathname);
+  mode = from ? "human" : settings.mode;
   document.body.dataset.mode = mode;
   $("#subtitle").textContent = mode === "ai" ? "電腦對戰" : "與電腦對弈";
-  firstSeat = settings.first === "random" ? (Math.random() < 0.5 ? 0 : 1) : settings.first === "human" ? 0 : 1;
-  const seed = crypto.getRandomValues(new Uint32Array(1))[0];
-  const { state: s } = await engine.call({ type: "new", seed });
+  firstSeat = from
+    ? ((from.moves.length % 2) as Seat)
+    : settings.first === "random"
+      ? Math.random() < 0.5
+        ? 0
+        : 1
+      : settings.first === "human"
+        ? 0
+        : 1;
+  seed = from ? from.seed : crypto.getRandomValues(new Uint32Array(1))[0];
+  const { state: s } = await engine.call(from ? { type: "load", seed, moves: from.moves } : { type: "new", seed });
   if (gen !== game) return;
   state = null; // 新局不計入上一局的終局
   apply(s, false);
+  if (!from) sound.shuffle();
   maybeAiMove();
+}
+
+// ───────────────────────── replay ─────────────────────────
+
+function stopReplay() {
+  if (replay) clearTimeout(replay.timer);
+  replay = null;
+}
+
+/** 載入回放；著法不合法（連結損毀）時改開新局 */
+async function startReplay(record: GameRecord, autoplay: boolean) {
+  const gen = reset();
+  mode = record.mode;
+  firstSeat = record.firstSeat;
+  seed = record.seed;
+  document.body.dataset.mode = "replay";
+  $("#subtitle").textContent = "棋局回放";
+  let final: Snapshot;
+  try {
+    final = (await engine.call({ type: "load", seed, moves: record.moves })).state;
+  } catch (e) {
+    if (gen !== game) return;
+    toast(`回放連結無效：${(e as Error).message}`);
+    return void newGame();
+  }
+  if (gen !== game) return;
+  replay = { record, full: final.history, final, ply: 0, playing: false, timer: 0 };
+  history.replaceState(null, "", recordUrl(record));
+  state = null;
+  await seek(0);
+  if (autoplay && record.moves.length) replay.timer = window.setTimeout(() => setPlaying(true), 900);
+}
+
+let seekSeq = 0;
+/** 跳到第 k 步（前進一步時有動畫與音效） */
+async function seek(k: number) {
+  const r = replay;
+  if (!r) return;
+  k = Math.max(0, Math.min(r.record.moves.length, k));
+  const step = state !== null && k === r.ply + 1;
+  r.ply = k;
+  const seq = ++seekSeq;
+  const gen = game;
+  const { state: s } = await engine.call({ type: "load", seed: r.record.seed, moves: r.record.moves.slice(0, k) });
+  if (gen !== game || seq !== seekSeq || replay !== r) return;
+  apply(s, step);
+}
+
+function setPlaying(on: boolean) {
+  const r = replay;
+  if (!r) return;
+  clearTimeout(r.timer);
+  r.playing = on && r.record.moves.length > 0;
+  if (r.playing) {
+    if (r.ply >= r.record.moves.length) void seek(0);
+    const tick = () => {
+      if (!replay?.playing || replay !== r) return;
+      if (r.ply >= r.record.moves.length) return setPlaying(false);
+      void seek(r.ply + 1);
+      r.timer = window.setTimeout(tick, 900 / speed);
+    };
+    r.timer = window.setTimeout(tick, r.ply === 0 ? 400 : 900 / speed);
+  }
+  if (state) render();
+}
+
+function renderReplay(s: Snapshot) {
+  const r = replay;
+  if (!r) return;
+  const n = r.record.moves.length;
+  const seekEl = $<HTMLInputElement>("#rp-seek");
+  seekEl.max = String(n);
+  seekEl.value = String(r.ply);
+  ($("#rp-first") as HTMLButtonElement).disabled = ($("#rp-prev") as HTMLButtonElement).disabled = r.ply === 0;
+  ($("#rp-last") as HTMLButtonElement).disabled = ($("#rp-next") as HTMLButtonElement).disabled = r.ply >= n;
+  const play = $<HTMLButtonElement>("#rp-play");
+  play.classList.toggle("playing", r.playing);
+  play.setAttribute("aria-label", r.playing ? "暫停" : "播放");
+  play.disabled = n === 0;
+  $("#rp-speed").textContent = `${speed}×`;
+  ($("#rp-takeover") as HTMLButtonElement).disabled = s.outcome !== -1;
+  const t = (ms: number) => `${ms / 1000}s`;
+  const who = r.record.mode === "ai" ? `電腦對戰（A ${t(r.record.timeA)}・B ${t(r.record.timeB)}）` : `人機對弈（電腦 ${t(r.record.timeA)}）`;
+  const o = r.final.outcome;
+  const result = o === -1 ? "未下完" : o === 2 ? "和局" : `${COLOR_NAMES[o]}方勝`;
+  $("#replay-meta").textContent = `${who}・共 ${n} 步・${result}`;
+}
+
+// ───────────────────────── share ─────────────────────────
+
+function currentRecord(): GameRecord | null {
+  if (replay) return replay.record;
+  if (!state || !state.history.length) return null;
+  return {
+    mode,
+    firstSeat,
+    timeA: mode === "ai" ? settings.timeA : settings.time,
+    timeB: settings.timeB,
+    seed,
+    moves: state.history.map((h) => h.from | (h.to << 5)),
+  };
+}
+
+async function share() {
+  const r = currentRecord();
+  if (!r) return toast("還沒有任何著法可以分享");
+  const url = recordUrl(r);
+  // 手機用系統分享面板，桌機直接複製
+  if (navigator.share && matchMedia("(pointer: coarse)").matches) {
+    try {
+      await navigator.share({ title: "台灣暗棋棋局", text: `一盤 ${r.moves.length} 步的暗棋`, url });
+      return;
+    } catch (e) {
+      if ((e as Error).name === "AbortError") return;
+    }
+  }
+  try {
+    await navigator.clipboard.writeText(url);
+    toast("已複製回放連結");
+  } catch {
+    prompt("複製這個回放連結：", url);
+  }
+}
+
+let toastTimer = 0;
+function toast(msg: string) {
+  const el = $("#toast");
+  el.textContent = msg;
+  el.classList.add("show");
+  clearTimeout(toastTimer);
+  toastTimer = window.setTimeout(() => el.classList.remove("show"), 2600);
 }
 
 async function maybeAiMove() {
   const s = state;
-  if (!s || s.outcome !== -1 || isHumanPly(s.ply) || thinking || paused) return;
+  if (!s || replay || s.outcome !== -1 || isHumanPly(s.ply) || thinking || paused) return;
   const gen = game;
   const seat = seatOfPly(s.ply);
   const time = seatTime(seat);
@@ -468,14 +698,18 @@ async function humanMove(from: number, to: number) {
 
 function onCell(i: number) {
   const s = state;
-  if (!s || thinking || busy || s.outcome !== -1 || !isHumanPly(s.ply)) return;
+  if (!s || replay || thinking || busy || s.outcome !== -1 || !isHumanPly(s.ply)) return;
   const moves = s.legal.map(decode);
   if (selected !== null && moves.some((m) => m.from === selected && m.to === i && m.to !== m.from))
     return void humanMove(selected, i);
   const p = s.cells[i];
   if (p === FACE_DOWN && moves.some((m) => m.from === i && m.to === i)) return void humanMove(i, i);
   const hc = humanColor(s);
-  selected = p < FACE_DOWN && hc !== null && colorOf(p) === hc && selected !== i ? i : null;
+  const own = p < FACE_DOWN && hc !== null && colorOf(p) === hc;
+  if (own && selected !== i) sound.select(panOf(i));
+  // 點了走不到的格子，或沒選子時點對方的子
+  else if (!own && (selected !== null || p < FACE_DOWN)) sound.deny(panOf(i));
+  selected = own && selected !== i ? i : null;
   render();
 }
 
@@ -487,7 +721,7 @@ function undoTarget(s: Snapshot): number | null {
 
 async function undo() {
   const s = state;
-  if (!s || thinking || busy) return;
+  if (!s || replay || thinking || busy) return;
   const target = undoTarget(s);
   if (target === null) return;
   const gen = game;
@@ -619,16 +853,81 @@ $("#btn-reset-score").addEventListener("click", () => {
   render();
 });
 overDialog.addEventListener("close", () => {
-  if (overDialog.returnValue === "new") void newGame();
+  const v = overDialog.returnValue;
+  if (v === "new") void newGame();
+  else if (v === "share") void share();
+  else if (v === "replay") {
+    const r = currentRecord();
+    if (r) void startReplay(r, true);
+  }
 });
+$("#btn-share").addEventListener("click", () => void share());
+
+// 回放控制
+const step = (k: number) => {
+  setPlaying(false);
+  void seek(k);
+};
+$("#rp-first").addEventListener("click", () => step(0));
+$("#rp-prev").addEventListener("click", () => replay && step(replay.ply - 1));
+$("#rp-next").addEventListener("click", () => replay && step(replay.ply + 1));
+$("#rp-last").addEventListener("click", () => replay && step(replay.record.moves.length));
+$("#rp-play").addEventListener("click", () => replay && setPlaying(!replay.playing));
+$<HTMLInputElement>("#rp-seek").addEventListener("input", (e) => step(Number((e.target as HTMLInputElement).value)));
+$("#rp-speed").addEventListener("click", () => {
+  speed = SPEEDS[(SPEEDS.indexOf(speed) + 1) % SPEEDS.length];
+  if (replay?.playing) setPlaying(true);
+  else if (state) render();
+});
+$("#rp-exit").addEventListener("click", () => void newGame());
+$("#rp-takeover").addEventListener("click", () => {
+  if (!replay || !state || state.outcome !== -1) return;
+  void newGame({ seed: replay.record.seed, moves: replay.record.moves.slice(0, replay.ply) });
+});
+
+// 音效設定
+const soundOn = $<HTMLInputElement>("#opt-sound");
+const volume = $<HTMLInputElement>("#opt-volume");
+soundOn.checked = settings.sound;
+volume.value = String(settings.volume);
+volume.disabled = !settings.sound;
+soundOn.addEventListener("change", () => {
+  settings.sound = sound.enabled = soundOn.checked;
+  volume.disabled = !soundOn.checked;
+  saveSettings();
+  sound.select();
+});
+volume.addEventListener("input", () => {
+  settings.volume = sound.volume = Number(volume.value);
+  saveSettings();
+});
+volume.addEventListener("change", () => sound.move());
+
 document.addEventListener("keydown", (e) => {
   if (e.key === "Escape" && selected !== null) {
     selected = null;
     render();
   }
+  if (!replay) return;
+  const tag = (e.target as HTMLElement).tagName;
+  if (tag === "INPUT" || tag === "SELECT" || tag === "TEXTAREA") return;
+  if (e.key === "ArrowRight") step(replay.ply + 1);
+  else if (e.key === "ArrowLeft") step(replay.ply - 1);
+  else if (e.key === "Home") step(0);
+  else if (e.key === "End") step(replay.record.moves.length);
+  else if (e.key === " " && tag !== "BUTTON") setPlaying(!replay.playing);
+  else return;
+  e.preventDefault();
 });
 
-void newGame();
+// 網址帶有回放（?r=）時直接進入回放
+const code = new URLSearchParams(location.search).get("r");
+const shared = code ? decodeRecord(code) : null;
+if (shared) void startReplay(shared, true);
+else {
+  if (code) toast("回放連結無效");
+  void newGame();
+}
 
 // PWA：離線快取（file:// 與不支援的瀏覽器略過）
 if ("serviceWorker" in navigator && location.protocol !== "file:") {

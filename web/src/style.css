@@ -637,8 +637,19 @@ small {
 
 /* 只在特定模式顯示的控制項 */
 body:not([data-mode="ai"]) [data-mode="ai"],
-body[data-mode="ai"] [data-mode="human"] {
+body:not([data-mode="human"]) [data-mode="human"],
+body:not([data-mode="replay"]) [data-mode="replay"],
+body[data-mode="replay"] .no-replay {
   display: none !important;
+}
+
+.check.inline {
+  margin: 0;
+  flex: none;
+}
+
+.range.sound input[type="range"]:disabled {
+  opacity: 0.4;
 }
 
 .check {
@@ -997,6 +1008,24 @@ body[data-mode="ai"] [data-mode="human"] {
   background: var(--accent-soft);
 }
 
+/* 回放：整局棋譜都列出，目前這步高亮、之後的步數淡化，點擊可跳轉 */
+body[data-mode="replay"] .log li {
+  cursor: pointer;
+}
+body[data-mode="replay"] .log li:hover {
+  background: var(--surface-2);
+}
+body[data-mode="replay"] .log li:last-child:not(.current) {
+  background: none;
+}
+.log li.current,
+body[data-mode="replay"] .log li.current {
+  background: var(--accent-soft);
+}
+.log li.future {
+  opacity: 0.4;
+}
+
 .log .n {
   width: 2em;
   text-align: right;
@@ -1131,6 +1160,163 @@ dialog p {
   color: #5b6b3a;
 }
 
+/* ───────── 回放控制 ───────── */
+
+.replay-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+
+.replay-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 10px;
+  font-size: 0.85rem;
+}
+
+.replay-bar input[type="range"] {
+  width: 100%;
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+.replay-ctrl {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.icon-btn {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid var(--line);
+  background: var(--surface-2);
+  cursor: pointer;
+  transition: filter 0.15s, transform 0.05s;
+}
+
+.icon-btn svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.icon-btn.primary {
+  width: 46px;
+  height: 46px;
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.icon-btn.primary svg path {
+  fill: currentColor;
+}
+
+.icon-btn .i-pause,
+.icon-btn.playing .i-play {
+  display: none;
+}
+
+.icon-btn.playing .i-pause {
+  display: inline;
+  fill: none;
+  stroke-width: 3;
+}
+
+.icon-btn:hover:not(:disabled) {
+  filter: brightness(0.96);
+}
+
+.icon-btn:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.icon-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.icon-btn:focus-visible,
+.speed:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 2px;
+}
+
+.speed {
+  min-width: 42px;
+  height: 30px;
+  padding: 0 8px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--surface-2);
+  font-size: 0.8rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+
+.replay-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.replay-actions .btn {
+  padding: 7px 10px;
+  font-size: 0.85rem;
+}
+
+dialog .actions.secondary {
+  margin-top: 8px;
+}
+
+dialog .actions.secondary .btn {
+  font-size: 0.85rem;
+  padding: 7px 10px;
+}
+
+/* ───────── 提示訊息 ───────── */
+
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: max(20px, env(safe-area-inset-bottom));
+  z-index: 50;
+  max-width: calc(100vw - 32px);
+  padding: 10px 16px;
+  border-radius: 999px;
+  background: var(--text);
+  color: var(--bg);
+  font-size: 0.9rem;
+  font-weight: 600;
+  box-shadow: var(--shadow);
+  opacity: 0;
+  transform: translate(-50%, 12px);
+  pointer-events: none;
+  transition: opacity 0.2s, transform 0.2s;
+}
+
+.toast.show {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
 /* ───────── 轉向提示（直拿手機時） ───────── */
 
 .rotate-hint {
@@ -1184,10 +1370,11 @@ dialog p {
     position: static;
     display: grid;
     grid-template-columns: auto minmax(0, 1fr);
-    grid-template-rows: auto 1fr auto;
+    grid-template-rows: auto 1fr auto auto;
     grid-template-areas:
       "board ai"
       "board status"
+      "board replay"
       "board me";
     gap: 8px 12px;
     align-items: start;
@@ -1205,6 +1392,27 @@ dialog p {
   }
   #bar-me {
     grid-area: me;
+  }
+  .replay-bar {
+    grid-area: replay;
+    padding: 6px 8px;
+    gap: 6px;
+  }
+  .replay-head,
+  .replay-actions .long {
+    display: none;
+  }
+  .replay-actions .btn {
+    padding: 5px 6px;
+    font-size: 0.78rem;
+  }
+  .icon-btn {
+    width: 30px;
+    height: 30px;
+  }
+  .icon-btn.primary {
+    width: 36px;
+    height: 36px;
   }
   .status {
     grid-area: status;

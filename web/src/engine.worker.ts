@@ -26,9 +26,12 @@ function snapshot(g: CdcGame): Snapshot {
 }
 
 function handle(req: Request): { state: Snapshot; analysis?: Analysis } {
-  if (req.type === "new") {
+  if (req.type === "new" || req.type === "load") {
     game?.free();
     game = new CdcGame(req.seed);
+    if (req.type === "load")
+      for (const [i, m] of req.moves.entries())
+        if (game.play(m & 31, (m >> 5) & 31) === 255) throw new Error(`第 ${i + 1} 步不合法`);
     return { state: snapshot(game) };
   }
   if (!game) throw new Error("尚未開局");

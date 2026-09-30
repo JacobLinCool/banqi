@@ -67,19 +67,39 @@
         </div>
 
         <p class="status" id="status" aria-live="polite"></p>
+
+        <div class="replay-bar" data-mode="replay" aria-label="回放控制">
+          <div class="replay-head">
+            <b>棋局回放</b>
+            <span class="muted" id="replay-meta"></span>
+          </div>
+          <input type="range" id="rp-seek" min="0" max="0" value="0" aria-label="回放進度" />
+          <div class="replay-ctrl">
+            <button class="icon-btn" id="rp-first" type="button" aria-label="回到開局" title="回到開局（Home）"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 5v14M18 6l-8 6 8 6z"/></svg></button>
+            <button class="icon-btn" id="rp-prev" type="button" aria-label="上一步" title="上一步（←）"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg></button>
+            <button class="icon-btn primary" id="rp-play" type="button" aria-label="播放" title="播放／暫停（空白鍵）"><svg viewBox="0 0 24 24" aria-hidden="true"><path class="i-play" d="M8 5.5v13l11-6.5z"/><path class="i-pause" d="M8 5v14M16 5v14"/></svg></button>
+            <button class="icon-btn" id="rp-next" type="button" aria-label="下一步" title="下一步（→）"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg></button>
+            <button class="icon-btn" id="rp-last" type="button" aria-label="跳到終局" title="跳到終局（End）"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 5v14M6 6l8 6-8 6z"/></svg></button>
+            <button class="speed" id="rp-speed" type="button" aria-label="播放速度" title="播放速度">1×</button>
+          </div>
+          <div class="replay-actions">
+            <button class="btn" id="rp-takeover" type="button"><span class="long">從這步</span>接手對弈</button>
+            <button class="btn" id="rp-exit" type="button">離開回放</button>
+          </div>
+        </div>
       </section>
 
       <aside class="side">
         <section class="card" aria-labelledby="h-setup">
           <h2 id="h-setup">對局設定</h2>
-          <div class="field">
+          <div class="field no-replay">
             <span class="label">模式</span>
             <div class="seg" id="opt-mode">
               <label><input type="radio" name="mode" value="human" /><span>人機對弈</span></label>
               <label><input type="radio" name="mode" value="ai" /><span>電腦對戰</span></label>
             </div>
           </div>
-          <div class="field">
+          <div class="field no-replay">
             <span class="label">先手 <small>（下一局生效）</small></span>
             <div class="seg" id="opt-first">
               <label><input type="radio" name="first" value="human" /><span data-label-human="玩家先" data-label-ai="A 先">玩家先</span></label>
@@ -114,12 +134,19 @@
               <label><input type="radio" name="timeB" value="10000" /><span>10s</span></label>
             </div>
           </div>
-          <div class="field">
+          <div class="field no-replay">
             <label class="label" for="opt-variety">變化度 <output id="variety-out"></output></label>
             <div class="range">
               <span>穩健</span>
               <input type="range" id="opt-variety" min="0" max="2" step="0.1" />
               <span>多變</span>
+            </div>
+          </div>
+          <div class="field">
+            <span class="label">音效</span>
+            <div class="range sound">
+              <label class="check inline"><input type="checkbox" id="opt-sound" /><span>開啟</span></label>
+              <input type="range" id="opt-volume" min="0" max="1" step="0.05" aria-label="音量" />
             </div>
           </div>
           <label class="check" data-mode="ai">
@@ -156,7 +183,7 @@
         </section>
 
         <section class="card" aria-labelledby="h-log">
-          <h2 id="h-log">棋譜</h2>
+          <h2 id="h-log">棋譜 <button class="link" id="btn-share" type="button">分享這局</button></h2>
           <ol class="log" id="log"></ol>
         </section>
 
@@ -169,6 +196,7 @@
             <li>例外：帥（將）不能吃兵（卒），兵（卒）可以吃帥（將）。</li>
             <li>炮（包）必須隔一子（蓋棋也算）跳吃，距離不限，不能直接吃相鄰的子。</li>
             <li>吃光對方或使對方無子可動即獲勝；連續多步沒有吃子也沒有翻子則判和。</li>
+            <li>「分享這局」會產生連結，打開就能回放整盤棋：可逐步播放、拖動進度、點棋譜跳到任一步，也能從任一步接手與電腦對弈。</li>
             <li>「電腦對戰」模式下兩個電腦各用獨立的搜尋表對弈，可分別設定思考時間來比較強弱，並可暫停或連續對局累計戰績。</li>
             <li>操作：點蓋棋翻開；點自己的棋子選取，再點標示的位置移動或吃子。可用「悔棋」退回你上一步。</li>
           </ul>
@@ -185,8 +213,14 @@
           <button class="btn" value="close">檢視棋盤</button>
           <button class="btn primary" value="new" id="over-new">再來一局</button>
         </div>
+        <div class="actions secondary">
+          <button class="btn" value="replay">回放本局</button>
+          <button class="btn" value="share">分享棋局</button>
+        </div>
       </form>
     </dialog>
+
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
     <script type="module" src="/src/main.ts"></script>
   </body>
