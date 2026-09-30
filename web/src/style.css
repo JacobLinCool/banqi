@@ -208,8 +208,15 @@ small {
 
 .who {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
+  gap: 4px 8px;
+}
+
+/* 空間不夠時整段換行，不要把名稱、標籤擠到斷字 */
+.who > * {
+  flex: none;
+  white-space: nowrap;
 }
 
 .avatar {
@@ -1207,6 +1214,10 @@ dialog p {
   .player {
     padding: 6px 10px;
     min-height: 0;
+  }
+  /* 側欄窄，「思考中」會擠到第二行讓資訊列忽高忽低；狀態列、金框與進度條已表示誰在思考 */
+  .thinking {
+    display: none !important;
   }
   .rotate-hint {
     display: none !important;
