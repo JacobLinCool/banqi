@@ -101,7 +101,7 @@ gating 函數依未翻子數、子力差與剩餘棋子數決定各專家的權�
 在 `engine/` 下：
 
 ```sh
-cargo test --release                                               # 規則與殘局庫測試
+cargo test                                                         # 規則與殘局庫測試
 cargo run --release --bin arena   -- 400 25 "A 設定" "B 設定" 16    # 自我對弈擂台
 cargo run --release --bin spsa    -- 10000 20 14                   # SPSA 調參
 cargo run --release --bin bench   -- 2000                          # 各階段搜尋深度

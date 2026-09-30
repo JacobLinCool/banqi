@@ -30,9 +30,11 @@ jobs:
         with:
           tool: wasm-pack
 
+      # 用 debug profile：release 開了 LTO，`cargo test --release` 會把函式庫編成 LTO 與非 LTO 兩份、輸出檔名相撞，
+      # 連結時可能拿到只有 bitcode 的那份而找不到符號（cargo#6313）
       - name: 規則與殘局庫測試
         working-directory: engine
-        run: cargo test --release
+        run: cargo test
 
       - name: 建置 WASM
         working-directory: engine
