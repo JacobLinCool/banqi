@@ -15,7 +15,7 @@
 ./build.sh        # 建置 WASM 並打包網頁
 ```
 
-輸出 `web/dist/index.html` 是單一檔案（JS、CSS、Worker、WASM 全部內嵌），直接用瀏覽器開啟即可對弈。開發時先跑一次 `./build.sh` 產生 WASM，之後 `cd web && npm run dev`。
+輸出 `web/dist/index.html` 是單一檔案（JS、CSS、Worker、WASM 全部內嵌），直接用瀏覽器開啟即可對弈。網頁支援「人機對弈」與「電腦對戰」兩種模式；電腦對戰時雙方各用獨立的大腦（置換表與亂數），可分別設定思考時間、暫停、連續對局並累計戰績。開發時先跑一次 `./build.sh` 產生 WASM，之後 `cd web && npm run dev`。
 
 ## 規則
 

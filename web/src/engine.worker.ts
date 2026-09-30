@@ -40,8 +40,8 @@ function handle(req: Request): { state: Snapshot; analysis?: Analysis } {
       game.undo(req.n);
       return { state: snapshot(game) };
     case "think": {
-      game.set_variety(req.variety);
-      const analysis = JSON.parse(game.think(req.timeMs)) as Analysis;
+      game.set_variety(req.slot, req.variety);
+      const analysis = JSON.parse(game.think(req.slot, req.timeMs)) as Analysis;
       if (game.play(analysis.move.from, analysis.move.to) === 255) throw new Error("引擎回傳不合法著法");
       return { state: snapshot(game), analysis };
     }

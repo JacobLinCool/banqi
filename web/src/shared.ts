@@ -43,7 +43,7 @@ export interface Analysis {
 export type Request =
   | { type: "new"; seed: number }
   | { type: "play"; from: number; to: number }
-  | { type: "think"; timeMs: number; variety: number }
+  | { type: "think"; slot: number; timeMs: number; variety: number }
   | { type: "undo"; n: number };
 
 export type Response =

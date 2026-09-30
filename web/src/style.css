@@ -621,6 +621,52 @@ small {
   margin-left: 4px;
 }
 
+/* 只在特定模式顯示的控制項 */
+body:not([data-mode="ai"]) [data-mode="ai"],
+body[data-mode="ai"] [data-mode="human"] {
+  display: none !important;
+}
+
+.check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.check input {
+  accent-color: var(--accent);
+  width: 16px;
+  height: 16px;
+  margin: 0;
+}
+
+.link {
+  float: right;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.link:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 2px;
+}
+
+.score {
+  margin: 14px 0 0;
+}
+
+.score .stats {
+  grid-template-columns: repeat(4, 1fr);
+  margin: 0;
+}
+
 .seg {
   display: flex;
   padding: 3px;

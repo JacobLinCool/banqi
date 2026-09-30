@@ -19,7 +19,7 @@
         <span class="seal" aria-hidden="true">暗</span>
         <div>
           <h1>台灣暗棋</h1>
-          <p>與電腦對弈</p>
+          <p id="subtitle">與電腦對弈</p>
         </div>
       </div>
     </header>
@@ -28,12 +28,12 @@
       <section class="play" aria-label="棋盤">
         <div class="player" id="bar-ai">
           <div class="who">
-            <span class="avatar" aria-hidden="true">機</span>
-            <b>電腦</b>
+            <span class="avatar" data-role="avatar" aria-hidden="true">機</span>
+            <b data-role="name">電腦</b>
             <span class="tag" data-role="color">未定</span>
             <span class="thinking" data-role="thinking" hidden><i></i><i></i><i></i> 思考中</span>
           </div>
-          <div class="caps" data-role="caps" aria-label="電腦吃掉的子"></div>
+          <div class="caps" data-role="caps" aria-label="吃掉的子"></div>
           <div class="think-progress" data-role="progress"><span></span></div>
         </div>
 
@@ -43,11 +43,13 @@
 
         <div class="player" id="bar-me">
           <div class="who">
-            <span class="avatar me" aria-hidden="true">人</span>
-            <b>你</b>
+            <span class="avatar me" data-role="avatar" aria-hidden="true">人</span>
+            <b data-role="name">你</b>
             <span class="tag" data-role="color">未定</span>
+            <span class="thinking" data-role="thinking" hidden><i></i><i></i><i></i> 思考中</span>
           </div>
-          <div class="caps" data-role="caps" aria-label="你吃掉的子"></div>
+          <div class="caps" data-role="caps" aria-label="吃掉的子"></div>
+          <div class="think-progress" data-role="progress"><span></span></div>
         </div>
 
         <p class="status" id="status" aria-live="polite"></p>
@@ -57,20 +59,45 @@
         <section class="card" aria-labelledby="h-setup">
           <h2 id="h-setup">對局設定</h2>
           <div class="field">
-            <span class="label">先手 <small>（下一局生效）</small></span>
-            <div class="seg" id="opt-first">
-              <label><input type="radio" name="first" value="human" /><span>玩家先</span></label>
-              <label><input type="radio" name="first" value="ai" /><span>電腦先</span></label>
-              <label><input type="radio" name="first" value="random" /><span>隨機</span></label>
+            <span class="label">模式</span>
+            <div class="seg" id="opt-mode">
+              <label><input type="radio" name="mode" value="human" /><span>人機對弈</span></label>
+              <label><input type="radio" name="mode" value="ai" /><span>電腦對戰</span></label>
             </div>
           </div>
           <div class="field">
+            <span class="label">先手 <small>（下一局生效）</small></span>
+            <div class="seg" id="opt-first">
+              <label><input type="radio" name="first" value="human" /><span data-label-human="玩家先" data-label-ai="A 先">玩家先</span></label>
+              <label><input type="radio" name="first" value="ai" /><span data-label-human="電腦先" data-label-ai="B 先">電腦先</span></label>
+              <label><input type="radio" name="first" value="random" /><span>隨機</span></label>
+            </div>
+          </div>
+          <div class="field" data-mode="human">
             <span class="label">電腦思考時間</span>
-            <div class="seg" id="opt-time">
+            <div class="seg">
               <label><input type="radio" name="time" value="500" /><span>快 0.5s</span></label>
               <label><input type="radio" name="time" value="2000" /><span>標準 2s</span></label>
               <label><input type="radio" name="time" value="5000" /><span>強 5s</span></label>
               <label><input type="radio" name="time" value="10000" /><span>最強 10s</span></label>
+            </div>
+          </div>
+          <div class="field" data-mode="ai">
+            <span class="label">電腦 A 思考時間</span>
+            <div class="seg">
+              <label><input type="radio" name="timeA" value="500" /><span>0.5s</span></label>
+              <label><input type="radio" name="timeA" value="2000" /><span>2s</span></label>
+              <label><input type="radio" name="timeA" value="5000" /><span>5s</span></label>
+              <label><input type="radio" name="timeA" value="10000" /><span>10s</span></label>
+            </div>
+          </div>
+          <div class="field" data-mode="ai">
+            <span class="label">電腦 B 思考時間</span>
+            <div class="seg">
+              <label><input type="radio" name="timeB" value="500" /><span>0.5s</span></label>
+              <label><input type="radio" name="timeB" value="2000" /><span>2s</span></label>
+              <label><input type="radio" name="timeB" value="5000" /><span>5s</span></label>
+              <label><input type="radio" name="timeB" value="10000" /><span>10s</span></label>
             </div>
           </div>
           <div class="field">
@@ -81,9 +108,18 @@
               <span>多變</span>
             </div>
           </div>
+          <label class="check" data-mode="ai">
+            <input type="checkbox" id="opt-auto" />
+            <span>終局後自動開下一局</span>
+          </label>
           <div class="actions">
             <button class="btn primary" id="btn-new">新局</button>
-            <button class="btn" id="btn-undo">悔棋</button>
+            <button class="btn" id="btn-undo" data-mode="human">悔棋</button>
+            <button class="btn" id="btn-pause" data-mode="ai">暫停</button>
+          </div>
+          <div class="field score" data-mode="ai">
+            <span class="label">戰績 <small>（本次瀏覽）</small><button class="link" id="btn-reset-score" type="button">清除</button></span>
+            <dl class="stats" id="score"></dl>
           </div>
         </section>
 
@@ -119,6 +155,7 @@
             <li>例外：帥（將）不能吃兵（卒），兵（卒）可以吃帥（將）。</li>
             <li>炮（包）必須隔一子（蓋棋也算）跳吃，距離不限，不能直接吃相鄰的子。</li>
             <li>吃光對方或使對方無子可動即獲勝；連續多步沒有吃子也沒有翻子則判和。</li>
+            <li>「電腦對戰」模式下兩個電腦各用獨立的搜尋表對弈，可分別設定思考時間來比較強弱，並可暫停或連續對局累計戰績。</li>
             <li>操作：點蓋棋翻開；點自己的棋子選取，再點標示的位置移動或吃子。可用「悔棋」退回你上一步。</li>
           </ul>
         </details>

@@ -9,7 +9,8 @@ use wasm_bindgen::prelude::*;
 pub struct CdcGame {
     game: Game,
     seed: u64,
-    brain: Brain,
+    /// 每個 slot 一顆獨立的大腦（各自的置換表與亂數），AI 對戰時雙方互不共享搜尋結果
+    brains: Vec<Brain>,
 }
 
 fn mv_json(m: Move) -> String {
@@ -23,7 +24,21 @@ impl CdcGame {
         let s = seed as u64;
         let mut rng = Rng::new(s);
         let game = Game::new(&mut rng);
-        CdcGame { game, seed: s, brain: Brain::new(s.wrapping_mul(31).wrapping_add(7), 22) }
+        CdcGame { game, seed: s, brains: vec![Self::make_brain(s, 0)] }
+    }
+
+    fn make_brain(seed: u64, slot: usize) -> Brain {
+        Brain::new(seed.wrapping_mul(31).wrapping_add(7 + slot as u64 * 0x9E37_79B9), 22)
+    }
+
+    /// 取得 slot 的大腦，第一次用到時才配置（置換表約 64MB）
+    fn brain(&mut self, slot: u8) -> &mut Brain {
+        let slot = slot as usize;
+        while self.brains.len() <= slot {
+            let b = Self::make_brain(self.seed, self.brains.len());
+            self.brains.push(b);
+        }
+        &mut self.brains[slot]
     }
 
     /// 32 格：0..13 棋子、14 蓋牌、15 空格。index = row*8 + col，row 0 在最下方。
@@ -116,12 +131,13 @@ impl CdcGame {
             .collect();
         format!("[{}]", items.join(","))
     }
-    pub fn set_variety(&mut self, v: f64) {
-        self.brain.variety = v;
+    pub fn set_variety(&mut self, slot: u8, v: f64) {
+        self.brain(slot).variety = v;
     }
-    /// AI 思考（不落子），回傳 JSON
-    pub fn think(&mut self, time_ms: f64) -> String {
-        let d = self.brain.decide(&self.game, time_ms);
+    /// 以 slot 的大腦思考（不落子），回傳 JSON
+    pub fn think(&mut self, slot: u8, time_ms: f64) -> String {
+        self.brain(slot);
+        let d = self.brains[slot as usize].decide(&self.game, time_ms);
         let experts: Vec<String> =
             d.experts.iter().map(|e| format!("{{\"name\":\"{}\",\"weight\":{:.4}}}", e.name, e.weight)).collect();
         let cands: Vec<String> =

@@ -17,14 +17,20 @@ import {
 
 // ───────────────────────── settings ─────────────────────────
 
+type Mode = "human" | "ai";
+/** 人機模式："human" 玩家先、"ai" 電腦先；電腦對戰模式："human" A 先、"ai" B 先 */
 type First = "human" | "ai" | "random";
 interface Settings {
+  mode: Mode;
   first: First;
   time: number;
+  timeA: number;
+  timeB: number;
   variety: number;
+  auto: boolean;
 }
 const SETTINGS_KEY = "cdc-settings";
-const settings: Settings = { first: "human", time: 2000, variety: 0.5 };
+const settings: Settings = { mode: "human", first: "human", time: 2000, timeA: 2000, timeB: 2000, variety: 0.5, auto: false };
 try {
   Object.assign(settings, JSON.parse(localStorage.getItem(SETTINGS_KEY) ?? "{}"));
 } catch {
@@ -40,15 +46,21 @@ const saveSettings = () => {
 
 // ───────────────────────── state ─────────────────────────
 
+// 座位：0 = 下方（人機模式的玩家／電腦對戰的 A），1 = 上方（電腦／B）
+type Seat = 0 | 1;
+
 let engine = new Engine();
 let game = 0; // generation counter; stale replies are dropped
 let state: Snapshot | null = null;
-let humanFirst = true;
+let mode: Mode = settings.mode; // 本局的模式（設定改變時立即開新局）
+let firstSeat: Seat = 0;
 let thinking = false;
 let busy = false; // a human move is in flight
+let paused = false; // 電腦對戰暫停
 let selected: number | null = null;
-let analysis: { data: Analysis; before: number[] } | null = null;
+let analysis: { data: Analysis; before: number[]; seat: Seat } | null = null;
 let error = "";
+const score = { a: 0, b: 0, draw: 0 }; // 電腦對戰戰績（以座位計）
 
 const $ = <T extends HTMLElement = HTMLElement>(sel: string, root: ParentNode = document) =>
   root.querySelector(sel) as T;
@@ -56,17 +68,26 @@ const $ = <T extends HTMLElement = HTMLElement>(sel: string, root: ParentNode = 
 const boardEl = $("#board");
 const barAi = $("#bar-ai");
 const barMe = $("#bar-me");
+const bars = [barMe, barAi] as const;
 const statusEl = $("#status");
 const overDialog = $<HTMLDialogElement>("#over");
 
-/** Plies at which the human is to move have this parity. */
-const isHumanPly = (ply: number) => ply % 2 === (humanFirst ? 0 : 1);
+const seatOfPly = (ply: number) => ((ply + firstSeat) % 2) as Seat;
+const isHumanPly = (ply: number) => mode === "human" && seatOfPly(ply) === 0;
 
-function humanColor(s: Snapshot): number | null {
+/** 座位名稱 */
+const seatName = (seat: Seat) => (mode === "ai" ? (seat ? "電腦 B" : "電腦 A") : seat ? "電腦" : "你");
+
+function seatColor(s: Snapshot, seat: Seat): number | null {
   if (!s.assigned || s.history.length === 0) return null;
   const first = colorOf(s.history[0].info);
-  return humanFirst ? first : 1 - first;
+  return seat === firstSeat ? first : 1 - first;
 }
+
+const humanColor = (s: Snapshot) => (mode === "human" ? seatColor(s, 0) : null);
+
+/** 該座位的思考時間 */
+const seatTime = (seat: Seat) => (mode === "ai" ? (seat ? settings.timeB : settings.timeA) : settings.time);
 
 const decode = (m: number) => ({ from: m & 31, to: (m >> 5) & 31 });
 
@@ -118,6 +139,7 @@ function render(animate = false) {
 
   const last = s.history.at(-1);
   const lastByAi = last !== undefined && !isHumanPly(s.ply - 1);
+  const toMove = seatOfPly(s.ply);
 
   for (let i = 0; i < 32; i++) {
     const b = cellEls[i];
@@ -138,11 +160,13 @@ function render(animate = false) {
   if (animate && last) animateMove(last);
 
   // player bars
-  const aiColor = hc === null ? null : 1 - hc;
-  setBar(barAi, aiColor, s, !isHumanPly(s.ply) && s.outcome === -1);
-  setBar(barMe, hc, s, myTurn);
-  $("[data-role=thinking]", barAi).hidden = !thinking;
-  barAi.classList.toggle("is-thinking", thinking);
+  for (const seat of [0, 1] as Seat[]) {
+    const bar = bars[seat];
+    const active = s.outcome === -1 && toMove === seat;
+    setBar(bar, seat, seatColor(s, seat), s, seat === 0 && mode === "human" ? myTurn : active && !(paused && !thinking));
+    $("[data-role=thinking]", bar).hidden = !(thinking && active);
+    bar.classList.toggle("is-thinking", thinking && active);
+  }
 
   // status line
   statusEl.textContent = error || statusText(s, hc);
@@ -151,13 +175,33 @@ function render(animate = false) {
   // side panels
   renderInfo(s);
   renderLog(s);
-  renderAnalysis(hc);
-  ($("#btn-undo") as HTMLButtonElement).disabled = thinking || undoTarget(s) === null;
+  renderAnalysis(s);
+  renderControls(s);
 }
 
-function setBar(bar: HTMLElement, color: number | null, s: Snapshot, toMove: boolean) {
+function renderControls(s: Snapshot) {
+  ($("#btn-undo") as HTMLButtonElement).disabled = thinking || undoTarget(s) === null;
+  const pause = $<HTMLButtonElement>("#btn-pause");
+  pause.textContent = paused ? "繼續" : "暫停";
+  pause.disabled = s.outcome !== -1;
+  const total = score.a + score.b + score.draw;
+  // A 的得分率（和棋算半分）
+  const rate = total ? `${(((score.a + score.draw / 2) / total) * 100).toFixed(0)}%` : "—";
+  $("#score").innerHTML = `
+    <div><dt>A 勝</dt><dd>${score.a}</dd></div>
+    <div><dt>B 勝</dt><dd>${score.b}</dd></div>
+    <div><dt>和</dt><dd>${score.draw}</dd></div>
+    <div><dt>A 得分率</dt><dd>${rate}</dd></div>`;
+}
+
+function setBar(bar: HTMLElement, seat: Seat, color: number | null, s: Snapshot, toMove: boolean) {
+  const human = mode === "human" && seat === 0;
+  const avatar = $("[data-role=avatar]", bar);
+  avatar.textContent = mode === "ai" ? (seat ? "B" : "A") : seat ? "機" : "人";
+  avatar.classList.toggle("me", seat === 0);
+  $("[data-role=name]", bar).textContent = seatName(seat);
   const tag = $("[data-role=color]", bar);
-  tag.textContent = color === null ? "未定" : `${bar === barMe ? "你是" : "執"}${COLOR_NAMES[color]}`;
+  tag.textContent = color === null ? "未定" : `${human ? "你是" : "執"}${COLOR_NAMES[color]}`;
   tag.className = `tag ${color === null ? "" : color ? "black" : "red"}`;
   bar.classList.toggle("to-move", toMove);
   const caps = $("[data-role=caps]", bar);
@@ -169,6 +213,14 @@ function setBar(bar: HTMLElement, color: number | null, s: Snapshot, toMove: boo
 }
 
 function statusText(s: Snapshot, hc: number | null): string {
+  if (mode === "ai") {
+    if (s.outcome !== -1) return s.outcome === 2 ? "和局" : `${winnerLabel(s)}獲勝`;
+    const seat = seatOfPly(s.ply);
+    const c = seatColor(s, seat);
+    const who = `${seatName(seat)}${c === null ? " " : `（${COLOR_NAMES[c]}）`}`;
+    if (thinking) return `${who}思考中…${paused ? "（這步走完後暫停）" : ""}`;
+    return paused ? `已暫停，輪到${who}` : `輪到${who}`;
+  }
   if (s.outcome !== -1) return s.outcome === 2 ? "和局" : s.outcome === hc ? "你贏了！" : "電腦獲勝";
   if (thinking) return "電腦思考中…";
   if (!isHumanPly(s.ply)) return "輪到電腦";
@@ -202,7 +254,7 @@ function renderLog(s: Snapshot) {
     const mover = i % 2 === 0 ? first : 1 - first; // colours alternate from the first flip
     const li = document.createElement("li");
     li.innerHTML = `<span class="n">${i + 1}</span><span class="dot ${mover ? "black" : "red"}"></span><span class="who">${
-      isHumanPly(i) ? "你" : "電腦"
+      mode === "ai" ? (seatOfPly(i) ? "B" : "A") : isHumanPly(i) ? "你" : "電腦"
     }</span><span class="mv"></span>`;
     $(".mv", li).textContent = notate(h);
     log.append(li);
@@ -210,23 +262,28 @@ function renderLog(s: Snapshot) {
   log.scrollTop = log.scrollHeight;
 }
 
-function renderAnalysis(hc: number | null) {
+function renderAnalysis(s: Snapshot) {
   const root = $("#analysis");
   if (!analysis) {
     root.innerHTML = `<p class="muted">${thinking ? "電腦思考中…" : "電腦走棋後，這裡會顯示評估與搜尋資訊。"}</p>`;
     return;
   }
-  const { data: a, before } = analysis;
+  const { data: a, before, seat } = analysis;
+  // 評分以走這步的電腦為視角
+  const me = seatName(seat);
+  const sp = mode === "ai" ? " " : ""; // 「電腦 A」後接中文時補空格
+  const opp = seatName((1 - seat) as Seat);
+  const c = seatColor(s, seat);
   const p = winProb(a.score);
-  const aiC = hc === null ? "neutral" : hc ? "red" : "black";
-  const meC = hc === null ? "neutral" : hc ? "black" : "red";
+  const aiC = c === null ? "neutral" : c ? "black" : "red";
+  const oppC = c === null ? "neutral" : c ? "red" : "black";
   const abs = Math.abs(a.score);
   const mate = abs >= 19000;
   // 29000 以上為搜尋找到的殺棋；19000–21000 為殘局資料庫的完美解
   const scoreText = mate
     ? abs >= 29000
-      ? a.score > 0 ? "電腦將勝" : "電腦將敗"
-      : a.score > 0 ? "殘局庫：電腦必勝" : "殘局庫：電腦必敗"
+      ? a.score > 0 ? `${me}${sp}將勝` : `${me}${sp}將敗`
+      : a.score > 0 ? `殘局庫：${me}${sp}必勝` : `殘局庫：${me}${sp}必敗`
     : (a.score > 0 ? "+" : "") + (a.score / 100).toFixed(2);
   const fmt = (n: number) => (n >= 1e6 ? (n / 1e6).toFixed(1) + "M" : n >= 1e3 ? (n / 1e3).toFixed(1) + "K" : String(n));
   const nps = a.timeMs > 0 ? fmt(Math.round((a.nodes / a.timeMs) * 1000)) : "—";
@@ -234,9 +291,9 @@ function renderAnalysis(hc: number | null) {
 
   root.innerHTML = `
     <div class="eval">
-      <div class="eval-head"><span>電腦勝率 <b>${(p * 100).toFixed(0)}%</b></span><span class="muted">評分 ${scoreText}</span></div>
-      <div class="eval-bar"><span class="${aiC}" style="width:${p * 100}%"></span><span class="${meC}"></span></div>
-      <div class="eval-legend muted"><span>電腦</span><span>你</span></div>
+      <div class="eval-head"><span>${me}${sp}勝率 <b>${(p * 100).toFixed(0)}%</b></span><span class="muted">評分 ${scoreText}</span></div>
+      <div class="eval-bar"><span class="${aiC}" style="width:${p * 100}%"></span><span class="${oppC}"></span></div>
+      <div class="eval-legend muted"><span>${me}</span><span>${opp}</span></div>
     </div>
     <dl class="stats">
       <div><dt>深度</dt><dd>${a.depth}</dd></div>
@@ -320,45 +377,64 @@ function animateMove(h: HistoryEntry) {
 // ───────────────────────── game flow ─────────────────────────
 
 function apply(next: Snapshot, animate: boolean) {
+  const ended = state?.outcome === -1 && next.outcome !== -1;
   state = next;
+  if (ended && mode === "ai") {
+    if (next.outcome === 2) score.draw++;
+    else if (next.outcome === seatColor(next, 0)) score.a++;
+    else score.b++;
+  }
   render(animate);
-  if (next.outcome !== -1) setTimeout(() => showOver(next), 550);
+  if (next.outcome === -1) return;
+  if (mode === "ai" && settings.auto && ended) {
+    const gen = game;
+    setTimeout(() => gen === game && settings.auto && !paused && void newGame(), 2500);
+  } else setTimeout(() => showOver(next), 550);
 }
 
 async function newGame() {
   engine.terminate(); // aborts any running search
   engine = new Engine();
   const gen = ++game;
-  thinking = busy = false;
+  thinking = busy = paused = false;
   selected = null;
   analysis = null;
   error = "";
   if (overDialog.open) overDialog.close();
-  humanFirst = settings.first === "random" ? Math.random() < 0.5 : settings.first === "human";
+  mode = settings.mode;
+  document.body.dataset.mode = mode;
+  $("#subtitle").textContent = mode === "ai" ? "電腦對戰" : "與電腦對弈";
+  firstSeat = settings.first === "random" ? (Math.random() < 0.5 ? 0 : 1) : settings.first === "human" ? 0 : 1;
   const seed = crypto.getRandomValues(new Uint32Array(1))[0];
   const { state: s } = await engine.call({ type: "new", seed });
   if (gen !== game) return;
+  state = null; // 新局不計入上一局的終局
   apply(s, false);
   maybeAiMove();
 }
 
 async function maybeAiMove() {
   const s = state;
-  if (!s || s.outcome !== -1 || isHumanPly(s.ply) || thinking) return;
+  if (!s || s.outcome !== -1 || isHumanPly(s.ply) || thinking || paused) return;
   const gen = game;
+  const seat = seatOfPly(s.ply);
+  const time = seatTime(seat);
   thinking = true;
   render();
-  startProgress(settings.time);
+  startProgress(seat, time);
   const started = performance.now();
   try {
     const before = s.cells;
-    const reply = await engine.call({ type: "think", timeMs: settings.time, variety: settings.variety });
+    // 人機模式只用一顆大腦；電腦對戰時 A、B 各用一顆
+    const slot = mode === "ai" ? seat : 0;
+    const reply = await engine.call({ type: "think", slot, timeMs: time, variety: settings.variety });
     const wait = 450 - (performance.now() - started); // let quick moves still feel deliberate
     if (wait > 0) await new Promise((r) => setTimeout(r, wait));
     if (gen !== game) return;
     thinking = false;
-    analysis = reply.analysis ? { data: reply.analysis, before } : null;
+    analysis = reply.analysis ? { data: reply.analysis, before, seat } : null;
     apply(reply.state, true);
+    if (mode === "ai") maybeAiMove();
   } catch (e) {
     if (gen !== game) return;
     thinking = false;
@@ -424,16 +500,29 @@ async function undo() {
   apply(next, false);
 }
 
+/** 電腦對戰的勝方，例如「電腦 A（紅）」 */
+function winnerLabel(s: Snapshot) {
+  const seat: Seat = s.outcome === seatColor(s, 0) ? 0 : 1;
+  return `${seatName(seat)}（${COLOR_NAMES[s.outcome]}）`;
+}
+
 function showOver(s: Snapshot) {
   if (state !== s || overDialog.open) return;
-  const hc = humanColor(s);
-  const res = s.outcome === 2 ? "和" : s.outcome === hc ? "勝" : "負";
   const mark = $("#over-mark");
-  mark.textContent = res;
-  mark.className = `over-mark r-${res === "勝" ? "win" : res === "負" ? "lose" : "draw"}`;
-  $("#over-title").textContent = res === "勝" ? "恭喜，你贏了！" : res === "負" ? "電腦獲勝" : "和局";
+  if (mode === "ai") {
+    // 勝字以勝方顏色呈現
+    mark.textContent = s.outcome === 2 ? "和" : "勝";
+    mark.className = `over-mark r-${s.outcome === 2 ? "draw" : s.outcome === 0 ? "win" : "lose"}`;
+    $("#over-title").textContent = s.outcome === 2 ? "和局" : `${winnerLabel(s)}獲勝`;
+  } else {
+    const hc = humanColor(s);
+    const res = s.outcome === 2 ? "和" : s.outcome === hc ? "勝" : "負";
+    mark.textContent = res;
+    mark.className = `over-mark r-${res === "勝" ? "win" : res === "負" ? "lose" : "draw"}`;
+    $("#over-title").textContent = res === "勝" ? "恭喜，你贏了！" : res === "負" ? "電腦獲勝" : "和局";
+  }
   $("#over-text").textContent =
-    res === "和"
+    s.outcome === 2
       ? s.reason === "repetition"
         ? `同一局面重複出現三次，依規則判和。共 ${s.ply} 步。`
         : `連續 ${s.drawPlies} 步沒有吃子或翻子，依規則判和。共 ${s.ply} 步。`
@@ -444,8 +533,8 @@ function showOver(s: Snapshot) {
 // ───────────────────────── thinking progress ─────────────────────────
 
 let progressAnim: Animation | null = null;
-function startProgress(ms: number) {
-  const bar = $("[data-role=progress] span", barAi);
+function startProgress(seat: Seat, ms: number) {
+  const bar = $("[data-role=progress] span", bars[seat]);
   progressAnim?.cancel();
   progressAnim = bar.animate([{ transform: "scaleX(0)" }, { transform: "scaleX(1)" }], { duration: ms, easing: "linear", fill: "forwards" });
 }
@@ -462,13 +551,33 @@ function bindRadios(name: string, value: string, onChange: (v: string) => void) 
     input.addEventListener("change", () => input.checked && onChange(input.value));
   }
 }
+const relabelFirst = () => {
+  for (const span of document.querySelectorAll<HTMLElement>("#opt-first span"))
+    span.textContent = span.dataset[settings.mode === "ai" ? "labelAi" : "labelHuman"] ?? span.textContent;
+};
+relabelFirst();
+bindRadios("mode", settings.mode, (v) => {
+  settings.mode = v as Mode;
+  saveSettings();
+  relabelFirst();
+  void newGame();
+});
 bindRadios("first", settings.first, (v) => {
   settings.first = v as First;
   saveSettings();
 });
-bindRadios("time", String(settings.time), (v) => {
-  settings.time = Number(v);
+for (const key of ["time", "timeA", "timeB"] as const)
+  bindRadios(key, String(settings[key]), (v) => {
+    settings[key] = Number(v);
+    saveSettings();
+  });
+const auto = $<HTMLInputElement>("#opt-auto");
+auto.checked = settings.auto;
+auto.addEventListener("change", () => {
+  settings.auto = auto.checked;
   saveSettings();
+  // 已終局時勾選就直接開下一局
+  if (settings.auto && mode === "ai" && state && state.outcome !== -1 && !paused) void newGame();
 });
 const variety = $<HTMLInputElement>("#opt-variety");
 const varietyOut = $("#variety-out");
@@ -486,6 +595,15 @@ variety.addEventListener("input", () => {
 
 $("#btn-new").addEventListener("click", () => void newGame());
 $("#btn-undo").addEventListener("click", () => void undo());
+$("#btn-pause").addEventListener("click", () => {
+  paused = !paused;
+  render();
+  maybeAiMove();
+});
+$("#btn-reset-score").addEventListener("click", () => {
+  score.a = score.b = score.draw = 0;
+  render();
+});
 overDialog.addEventListener("close", () => {
   if (overDialog.returnValue === "new") void newGame();
 });
