@@ -46,6 +46,8 @@ export type Request =
   | { type: "load"; seed: number; moves: number[] }
   | { type: "play"; from: number; to: number }
   | { type: "think"; slot: number; timeMs: number; variety: number }
+  /** 只思考、不落子（給玩家的建議著法） */
+  | { type: "suggest"; timeMs: number }
   | { type: "undo"; n: number };
 
 export type Response =

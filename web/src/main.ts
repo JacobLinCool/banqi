@@ -1,7 +1,8 @@
 import "./style.css";
 import { Sound } from "./audio";
 import { Engine } from "./engine";
-import { decodeRecord, type GameRecord, recordUrl } from "./replay";
+import { decodeRecord, type GameRecord, recordUrl, THINK_TIMES } from "./replay";
+import { type Coord, registerWebMcp } from "./webmcp";
 import {
   type Analysis,
   COLOR_NAMES,
@@ -919,6 +920,177 @@ document.addEventListener("keydown", (e) => {
   else return;
   e.preventDefault();
 });
+
+// ───────────────────────── WebMCP（讓 AI 助理讀取與下棋） ─────────────────────────
+
+/** 等電腦思考、落子動作結束 */
+function waitIdle(timeoutMs = 90_000): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const t0 = performance.now();
+    const tick = () => {
+      if (!thinking && !busy) return resolve();
+      if (performance.now() - t0 > timeoutMs) return reject(new Error("timed out waiting for the engine"));
+      setTimeout(tick, 50);
+    };
+    tick();
+  });
+}
+
+const moveText = (m: { from: number; to: number; flip?: boolean }, cells: number[]) =>
+  m.from === m.to ? `flip ${square(m.from)}` : `${square(m.from)}${cells[m.to] < FACE_DOWN ? "x" : "-"}${square(m.to)}`;
+
+function outcomeText(s: Snapshot): string {
+  if (s.outcome === -1) return "ongoing";
+  if (s.outcome === 2) return s.reason === "repetition" ? "draw (threefold repetition)" : `draw (${s.drawPlies} plies without capture or flip)`;
+  const how = s.reason === "blocked" ? "opponent has no legal move" : "all opponent pieces captured";
+  const who = mode === "human" && !replay ? (s.outcome === humanColor(s) ? "you win" : "computer wins") : `${seatName(s.outcome === seatColor(s, 0) ? 0 : 1)} wins`;
+  return `${COLOR_NAMES[s.outcome]}（${s.outcome ? "black" : "red"}）wins — ${who}, ${how}`;
+}
+
+/** 給 AI 看的棋局描述 */
+function describeState() {
+  const s = state;
+  if (!s) return { status: "loading" };
+  const glyph = (p: number) => (p === FACE_DOWN ? "■" : p === EMPTY ? "・" : PIECE_CHARS[p]);
+  const board = ["　 a 　b 　c 　d 　e 　f 　g 　h"];
+  for (let r = 3; r >= 0; r--) board.push(`${r + 1} ${Array.from({ length: 8 }, (_, c) => glyph(s.cells[r * 8 + c])).join(" ")}`);
+  const hidden: Record<string, number> = {};
+  const captured: Record<string, number> = {};
+  for (let p = 0; p < 14; p++) {
+    if (s.pool[p]) hidden[PIECE_CHARS[p]] = s.pool[p];
+    if (s.captured[p]) captured[PIECE_CHARS[p]] = s.captured[p];
+  }
+  const players = ([0, 1] as Seat[]).map((seat) => {
+    const c = seatColor(s, seat);
+    return { name: seatName(seat), color: c === null ? "not yet decided (first flip decides)" : c ? "black 黑" : "red 紅" };
+  });
+  const yourTurn = !replay && mode === "human" && s.outcome === -1 && isHumanPly(s.ply) && !thinking;
+  const moves = s.legal.map(decode);
+  return {
+    mode: replay ? "replay" : mode === "human" ? "human vs computer (you are 你)" : "computer vs computer",
+    players,
+    toMove: s.outcome === -1 ? seatName(seatOfPly(s.ply)) : null,
+    yourTurn,
+    computerThinking: thinking,
+    result: outcomeText(s),
+    ply: s.ply,
+    noProgressPlies: `${s.nocap} / ${s.drawPlies} (draw at the limit)`,
+    board,
+    legend: "red 帥仕相俥傌炮兵 (king…pawn), black 將士象車馬包卒, ■ face-down, ・ empty; rank 4 is the top row",
+    legalMoves: yourTurn ? moves.map((m) => moveText(m, s.cells)) : [],
+    hiddenPieces: hidden,
+    capturedPieces: captured,
+    history: s.history.map((h, i) => `${i + 1}. ${seatName(seatOfPly(i))}: ${notate(h)}`),
+    ...(replay ? { replay: { ply: replay.ply, total: replay.record.moves.length, finalResult: replay.final.outcome === -1 ? "unfinished" : outcomeText(replay.final) } } : {}),
+  };
+}
+
+const RULES = `Taiwanese Chinese Dark Chess (台灣暗棋 / banqi), TCGA computer-games rules:
+- 4×8 board, 32 pieces start face-down in random positions. On your turn either flip any face-down piece or move one of your own pieces.
+- The first player to flip takes the colour of the piece they flipped.
+- Every piece (including chariots and horses) moves one square orthogonally to an empty square.
+- Ranks: 帥/將 > 仕/士 > 相/象 > 俥/車 > 傌/馬 > 炮/包 > 兵/卒. A piece captures an adjacent enemy of equal or lower rank.
+- Exceptions: the king cannot capture pawns; pawns can capture the king; pawns cannot capture cannons.
+- Cannons capture by jumping over exactly one piece (face-down pieces count as screens) any distance in a straight line, and may capture any enemy piece; they cannot capture adjacent pieces.
+- Face-down pieces cannot be captured.
+- You win when the opponent has no pieces left or no legal move. ${60} consecutive plies without a flip or capture is a draw, as is the same position occurring three times.`;
+
+function syncRadio(name: string, value: string) {
+  for (const input of document.querySelectorAll<HTMLInputElement>(`input[name=${name}]`)) input.checked = input.value === value;
+}
+
+const agentApi = {
+  describe: describeState,
+  rules: () => RULES,
+  async play(m: Coord) {
+    if (!state) throw new Error("The game is still loading.");
+    if (replay) throw new Error("A replay is being viewed. Call new_game to play (or take over from the page).");
+    if (mode !== "human") throw new Error('The page is in computer-vs-computer mode. Call new_game with mode "human" to play.');
+    await waitIdle();
+    const s = state;
+    if (s.outcome !== -1) throw new Error(`The game is over (${outcomeText(s)}). Call new_game to play again.`);
+    if (!isHumanPly(s.ply)) throw new Error("It is not your turn.");
+    const legal = s.legal.map(decode);
+    if (!legal.some((l) => l.from === m.from && l.to === m.to))
+      throw new Error(`Illegal move ${moveText(m, s.cells)}. Legal moves: ${legal.map((l) => moveText(l, s.cells)).join(", ")}`);
+    const before = s.ply;
+    await humanMove(m.from, m.to);
+    if (!state || state.ply === before) throw new Error(error || "The move was not played.");
+    await waitIdle();
+    const after = state;
+    return {
+      yourMove: notate(after.history[before]),
+      computerReply: after.history.slice(before + 1).map(notate),
+      state: describeState(),
+    };
+  },
+  async suggest(timeMs: number) {
+    if (!state || replay || mode !== "human") throw new Error("Suggestions are available in a human-vs-computer game.");
+    await waitIdle();
+    const s = state;
+    if (s.outcome !== -1 || !isHumanPly(s.ply)) throw new Error("It is not your turn.");
+    const gen = game;
+    const { analysis: a } = await engine.call({ type: "suggest", timeMs });
+    if (gen !== game || !a) throw new Error("The game changed while thinking.");
+    return {
+      bestMove: moveText(a.move, s.cells),
+      evaluation: `${a.score > 0 ? "+" : ""}${(a.score / 100).toFixed(2)} (pawn ≈ 1.00, from your side)`,
+      winProbability: `${Math.round(winProb(a.score) * 100)}%`,
+      depth: a.depth,
+      principalVariation: a.pv.map((m, i) => (i === 0 ? moveText(m, s.cells) : notateMove(m))),
+      alternatives: a.candidates.map((c) => ({ move: moveText(c.move, s.cells), score: c.score })),
+    };
+  },
+  async newGame(o: { mode?: "human" | "ai"; first?: "you" | "engine" | "random"; thinkTimeMs?: number }) {
+    if (o.mode) settings.mode = o.mode;
+    if (o.first) settings.first = o.first === "you" ? "human" : o.first === "engine" ? "ai" : "random";
+    if (o.thinkTimeMs !== undefined) {
+      const t = THINK_TIMES.reduce((a, b) => (Math.abs(b - o.thinkTimeMs!) < Math.abs(a - o.thinkTimeMs!) ? b : a));
+      settings.time = settings.timeA = settings.timeB = t;
+    }
+    saveSettings();
+    syncRadio("mode", settings.mode);
+    syncRadio("first", settings.first);
+    for (const k of ["time", "timeA", "timeB"] as const) syncRadio(k, String(settings[k]));
+    relabelFirst();
+    await newGame();
+    // 電腦先手時等它走完第一步
+    if (mode === "human") await waitIdle();
+    return describeState();
+  },
+  async undo() {
+    if (replay || mode !== "human") throw new Error("Undo is available in a human-vs-computer game.");
+    await waitIdle();
+    if (!state || undoTarget(state) === null) throw new Error("Nothing to undo.");
+    await undo();
+    return describeState();
+  },
+  shareLink() {
+    const r = currentRecord();
+    if (!r) throw new Error("No moves have been played yet.");
+    return recordUrl(r);
+  },
+  async openReplay(link: string) {
+    let code = link.trim();
+    try {
+      code = new URL(code, location.href).searchParams.get("r") ?? code;
+    } catch {
+      /* 不是網址，當作代碼 */
+    }
+    const rec = decodeRecord(code);
+    if (!rec) throw new Error("Invalid replay link.");
+    await startReplay(rec, false);
+    if (!replay) throw new Error("The replay contains an illegal move.");
+    return describeState();
+  },
+  async replayGoto(ply: number) {
+    if (!replay) throw new Error("No replay is open. Call open_replay first.");
+    setPlaying(false);
+    await seek(ply);
+    return describeState();
+  },
+};
+registerWebMcp(agentApi);
 
 // 網址帶有回放（?r=）時直接進入回放
 const code = new URLSearchParams(location.search).get("r");

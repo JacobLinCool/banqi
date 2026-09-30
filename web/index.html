@@ -4,7 +4,52 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="color-scheme" content="light dark" />
-    <meta name="description" content="與電腦對弈的台灣暗棋，引擎在瀏覽器內執行，可安裝、可離線遊玩。" />
+    <meta name="description" content="免費線上台灣暗棋：在瀏覽器裡與強力 AI 對弈，或觀看兩台電腦對戰。免安裝、可離線遊玩、可安裝成 App，還能用連結分享整盤棋的回放。" />
+    <meta name="author" content="JacobLinCool" />
+    <meta name="robots" content="index, follow, max-image-preview:large" />
+    <link rel="canonical" href="https://jacoblincool.github.io/banqi/" />
+
+    <!-- Open Graph -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="台灣暗棋" />
+    <meta property="og:title" content="台灣暗棋｜線上與 AI 對弈" />
+    <meta property="og:description" content="免費線上台灣暗棋：在瀏覽器裡與強力 AI 對弈，或觀看兩台電腦對戰。免安裝、可離線遊玩、可安裝成 App，還能用連結分享整盤棋的回放。" />
+    <meta property="og:url" content="https://jacoblincool.github.io/banqi/" />
+    <meta property="og:image" content="https://jacoblincool.github.io/banqi/og-image.jpg" />
+    <meta property="og:image:type" content="image/jpeg" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="台灣暗棋：木紋棋盤上翻開一半的中盤局面" />
+    <meta property="og:locale" content="zh_TW" />
+
+    <!-- Twitter / X -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="台灣暗棋｜線上與 AI 對弈" />
+    <meta name="twitter:description" content="免費線上台灣暗棋：在瀏覽器裡與強力 AI 對弈，或觀看兩台電腦對戰。免安裝、可離線遊玩、可安裝成 App，還能用連結分享整盤棋的回放。" />
+    <meta name="twitter:image" content="https://jacoblincool.github.io/banqi/og-image.jpg" />
+    <meta name="twitter:image:alt" content="台灣暗棋：木紋棋盤上翻開一半的中盤局面" />
+
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": ["VideoGame", "WebApplication"],
+        "name": "台灣暗棋",
+        "alternateName": ["Taiwanese Chinese Dark Chess", "Banqi", "暗棋"],
+        "url": "https://jacoblincool.github.io/banqi/",
+        "description": "免費線上台灣暗棋：在瀏覽器裡與強力 AI 對弈，或觀看兩台電腦對戰。免安裝、可離線遊玩、可安裝成 App，還能用連結分享整盤棋的回放。",
+        "image": "https://jacoblincool.github.io/banqi/og-image.jpg",
+        "inLanguage": "zh-Hant-TW",
+        "genre": ["Board game", "Strategy"],
+        "gamePlatform": "Web browser",
+        "applicationCategory": "GameApplication",
+        "operatingSystem": "Any",
+        "playMode": "SinglePlayer",
+        "isAccessibleForFree": true,
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "TWD" },
+        "author": { "@type": "Person", "name": "JacobLinCool", "url": "https://github.com/JacobLinCool" },
+        "codeRepository": "https://github.com/JacobLinCool/banqi"
+      }
+    </script>
     <meta name="theme-color" content="#f4ede1" media="(prefers-color-scheme: light)" />
     <meta name="theme-color" content="#15120f" media="(prefers-color-scheme: dark)" />
     <meta name="mobile-web-app-capable" content="yes" />
@@ -13,7 +58,7 @@
     <meta name="apple-mobile-web-app-title" content="暗棋" />
     <link rel="manifest" href="./manifest.webmanifest" />
     <link rel="apple-touch-icon" href="./icons/apple-touch-icon.png" />
-    <title>台灣暗棋</title>
+    <title>台灣暗棋｜線上與 AI 對弈</title>
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ccircle cx='32' cy='32' r='30' fill='%23f3e4c4' stroke='%23b8231b' stroke-width='4'/%3E%3Ctext x='32' y='44' font-size='34' text-anchor='middle' fill='%23b8231b' font-family='serif'%3E帥%3C/text%3E%3C/svg%3E" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -196,6 +241,7 @@
             <li>例外：帥（將）不能吃兵（卒），兵（卒）可以吃帥（將）。</li>
             <li>炮（包）必須隔一子（蓋棋也算）跳吃，距離不限，不能直接吃相鄰的子。</li>
             <li>吃光對方或使對方無子可動即獲勝；連續多步沒有吃子也沒有翻子則判和。</li>
+            <li>支援 <a href="https://github.com/webmachinelearning/webmcp" rel="noopener">WebMCP</a>：瀏覽器裡的 AI 助理可以讀取棋局、請引擎建議著法並代你下棋。</li>
             <li>「分享這局」會產生連結，打開就能回放整盤棋：可逐步播放、拖動進度、點棋譜跳到任一步，也能從任一步接手與電腦對弈。</li>
             <li>「電腦對戰」模式下兩個電腦各用獨立的搜尋表對弈，可分別設定思考時間來比較強弱，並可暫停或連續對局累計戰績。</li>
             <li>操作：點蓋棋翻開；點自己的棋子選取，再點標示的位置移動或吃子。可用「悔棋」退回你上一步。</li>

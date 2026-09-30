@@ -42,6 +42,11 @@ function handle(req: Request): { state: Snapshot; analysis?: Analysis } {
     case "undo":
       game.undo(req.n);
       return { state: snapshot(game) };
+    case "suggest": {
+      // 用人機模式電腦那顆大腦，變化度 0 取最佳著；下一次電腦思考會重設它的變化度
+      game.set_variety(0, 0);
+      return { state: snapshot(game), analysis: JSON.parse(game.think(0, req.timeMs)) as Analysis };
+    }
     case "think": {
       game.set_variety(req.slot, req.variety);
       const analysis = JSON.parse(game.think(req.slot, req.timeMs)) as Analysis;

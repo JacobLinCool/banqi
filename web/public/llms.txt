@@ -1,0 +1,32 @@
+# 台灣暗棋 (Taiwanese Chinese Dark Chess / Banqi)
+
+> A free web app for playing Taiwanese Chinese Dark Chess (暗棋) against a strong engine that runs entirely in the browser (Rust compiled to WebAssembly), or watching two engines play each other. Installable as a PWA and playable offline. Interface language: Traditional Chinese (zh-Hant-TW).
+
+## Play
+
+- [Play in the browser](https://jacoblincool.github.io/banqi/): human vs computer, or computer vs computer.
+- Replays: a whole game is encoded in the `?r=` query string (deal seed + moves). Opening such a link replays the game move by move, and any position can be taken over to continue against the engine.
+
+## For AI agents (WebMCP)
+
+The page registers WebMCP tools via `document.modelContext.registerTool` (falls back to `navigator.modelContext`) so a browser AI assistant can read and play:
+
+- `get_game_state`: board (ranks 4→1, files a–h), whose turn, your colour, legal moves, hidden and captured pieces, no-progress counter, history, result
+- `get_rules`: the full rules
+- `make_move` `{ move }`: play for the human side ("flip c2", "c2-c3", "c3xd3") and wait for the computer's reply
+- `suggest_move` `{ thinkTimeMs? }`: the engine's best move for you, without playing it
+- `new_game` `{ mode?: "human" | "ai", first?: "you" | "engine" | "random", thinkTimeMs? }`
+- `undo`, `get_share_link`, `open_replay` `{ link }`, `replay_goto` `{ ply }`
+
+Pieces: red 帥仕相俥傌炮兵, black 將士象車馬包卒 (king → pawn). Squares: a1 is bottom-left, h4 top-right.
+
+## Rules (TCGA)
+
+- 4×8 board, 32 face-down pieces. Flip any face-down piece or move one of your own pieces one step orthogonally. The first flip decides your colour.
+- Capture adjacent enemies of equal or lower rank; the king cannot capture pawns, pawns can capture the king, pawns cannot capture cannons.
+- Cannons capture by jumping exactly one screen (face-down pieces count) at any distance, and cannot capture adjacent pieces.
+- Win by capturing everything or leaving the opponent without a legal move. 60 plies without flip or capture, or threefold repetition, is a draw.
+
+## Source
+
+- [GitHub repository](https://github.com/JacobLinCool/banqi): engine (expectiminimax with Star1 chance nodes, SPSA-tuned evaluation, retrograde endgame tablebase), web UI, and match results against public engines.
