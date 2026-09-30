@@ -1,0 +1,68 @@
+# 建置引擎 WASM 與網頁，部署到 GitHub Pages
+name: Pages
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pages-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: engine
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: wasm-pack
+
+      - name: 規則與殘局庫測試
+        working-directory: engine
+        run: cargo test --release
+
+      - name: 建置 WASM
+        working-directory: engine
+        run: wasm-pack build --target web --release --out-dir ../web/src/pkg -- --features wasm
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: 建置網頁
+        working-directory: web
+        run: |
+          npm ci
+          npm run build
+
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: web/dist
+
+  deploy:
+    if: github.event_name != 'pull_request'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v5
